@@ -6,7 +6,7 @@ use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, Mutex};
 use tracing::{debug, trace};
 
-use crate::types::{OperationId, OperationStatus, ProgressTelemetry};
+use crate::types::{OperationId, OperationStatus, ProgressTelemetry, get_cpu_count};
 use crate::Result;
 
 /// Progress monitor for tracking operation metrics
@@ -15,7 +15,7 @@ pub struct ProgressMonitor {
     start_time: Instant,
     status: Arc<Mutex<OperationStatus>>,
     telemetry_tx: broadcast::Sender<ProgressTelemetry>,
-    internal_tx: mpsc::UnboundedSender<ProgressTelemetry>,
+    internal_tx: mpsc::UnboundedSender<InternalProgressUpdate>,
     bytes_read: Arc<Mutex<u64>>,
     bytes_written: Arc<Mutex<u64>>,
     bytes_compressed: Arc<Mutex<u64>>,
@@ -64,6 +64,9 @@ impl ProgressMonitor {
                 // Update internal state
                 if let Some(bytes) = update.bytes_processed_override {
                     *bytes_written_clone.lock().await = bytes;
+                }
+                if let Some(file) = update.file_name {
+                    *current_file_clone.lock().await = file;
                 }
 
                 // Emit telemetry at max 10 Hz
@@ -268,7 +271,7 @@ impl SystemMonitor {
         }
 
         let cpu_delta = total_time.saturating_sub(self.last_cpu_time) as f64;
-        let cpu_percent = (cpu_delta / elapsed / num_cpus::get() as f64 * 100.0) as f32;
+        let cpu_percent = (cpu_delta / elapsed / get_cpu_count() as f64 * 100.0) as f32;
 
         self.last_cpu_time = total_time;
         self.last_check = now;

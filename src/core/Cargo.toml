@@ -38,6 +38,10 @@ hex = "0.4"
 sysinfo = "0.30"
 libc = "0.2"
 
+# Time & CPU
+chrono = { version = "0.4", features = ["serde"] }
+num_cpus = "1.16"
+
 # Logging
 tracing = { version = "0.1", features = ["std"] }
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json"] }
@@ -50,8 +54,9 @@ toml = "0.8"
 dirs-next = "2.0"
 
 # IPC (for GUI communication)
-zbus = { version = "4.0", features = ["xml", "tokio"] }
-zvariant = "5.0"
+zbus = { version = "4.0", features = ["tokio"] }
+zvariant = "4.2"
+zvariant_derive = "4.2"
 
 # CLI (for standalone testing)
 clap = { version = "4.5", features = ["derive", "env"] }

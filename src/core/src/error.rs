@@ -42,7 +42,7 @@ pub enum TripleWrapperError {
     DBus(#[from] zbus::Error),
 
     #[error("System info error: {0}")]
-    SysInfo(#[from] sysinfo::Error),
+    SysInfo(String),
 
     #[error("Internal error: {0}")]
     Internal(String),

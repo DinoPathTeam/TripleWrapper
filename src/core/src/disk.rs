@@ -3,7 +3,9 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::process::Command;
-use sysinfo::{DiskExt, System, SystemExt};
+use std::os::unix::ffi::OsStrExt;
+use std::os::unix::fs::MetadataExt;
+use sysinfo::{Disks, System};
 use tracing::{debug, warn};
 
 use crate::types::DiskInfo;
@@ -18,7 +20,7 @@ pub struct DiskScanner {
 impl DiskScanner {
     pub fn new() -> Self {
         let mut system = System::new_all();
-        system.refresh_disks();
+        system.refresh_all();
         Self {
             system,
             label_cache: HashMap::new(),
@@ -27,14 +29,16 @@ impl DiskScanner {
 
     /// Scan all mounted disks with space info
     pub fn scan(&mut self) -> Vec<DiskInfo> {
-        self.system.refresh_disks();
+        self.system.refresh_all();
         let mut disks = Vec::new();
 
-        for disk in self.system.disks() {
+        let disks_info = Disks::new_with_refreshed_list();
+        
+        for disk in disks_info.iter() {
             let mount_point = disk.mount_point().to_path_buf();
             
             // Skip virtual filesystems
-            let fs = String::from_utf8_lossy(disk.file_system()).to_string();
+            let fs = disk.file_system().to_string_lossy().to_string();
             if Self::is_virtual_fs(&fs) {
                 continue;
             }
@@ -58,7 +62,7 @@ impl DiskScanner {
                 used_bytes: used,
                 is_removable,
                 is_system,
-                device_path: device_name.map(PathBuf::from),
+                device_path: device_name.unwrap_or_default(),
             });
         }
 
@@ -132,7 +136,7 @@ impl DiskScanner {
                             used_bytes: usage.0.saturating_sub(usage.1),
                             is_removable: true,
                             is_system: false,
-                            device_path: None,
+                            device_path: String::new(),
                         });
                     }
                 }
@@ -142,7 +146,7 @@ impl DiskScanner {
     }
 
     /// Find disk containing a path
-    pub fn find_disk_for_path(&self, path: &Path, disks: &[DiskInfo]) -> Option<&DiskInfo> {
+    pub fn find_disk_for_path<'a>(&self, path: &Path, disks: &'a [DiskInfo]) -> Option<&'a DiskInfo> {
         let abs_path = path.canonicalize().ok()?;
         disks
             .iter()
@@ -187,12 +191,16 @@ impl DiskScanner {
     }
 
     fn is_mount_point(path: &Path) -> bool {
-        // Simple check: different device from parent
-        if let (Ok(meta), Ok(parent_meta)) = (path.metadata(), path.parent().unwrap_or(path).metadata()) {
-            meta.dev() != parent_meta.dev()
-        } else {
-            false
-        }
+        // Check if path is a mount point by comparing device IDs with parent
+        let meta = match path.metadata() {
+            Ok(m) => m,
+            Err(_) => return false,
+        };
+        let parent_meta = match path.parent().and_then(|p| p.metadata().ok()) {
+            Some(m) => m,
+            None => return true, // Root path is always a mount point
+        };
+        meta.dev() != parent_meta.dev()
     }
 }
 

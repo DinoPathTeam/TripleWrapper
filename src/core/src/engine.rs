@@ -52,7 +52,15 @@ impl StorageEngine {
         &self.disks_cache
     }
 
-    /// Get cached disks (refresh if empty)
+    /// Get cached disks as owned data (refresh if empty)
+    pub fn get_disks_owned(&mut self) -> Vec<DiskInfo> {
+        if self.disks_cache.is_empty() {
+            self.refresh_disks();
+        }
+        self.disks_cache.clone()
+    }
+
+    /// Get cached disks as reference (refresh if empty)
     pub fn get_disks(&mut self) -> &[DiskInfo] {
         if self.disks_cache.is_empty() {
             self.refresh_disks();
@@ -78,11 +86,16 @@ impl StorageEngine {
         archive_path: &Path,
         estimate: &CompressionEstimate,
     ) -> StorageVerdict {
-        let disks = self.get_disks();
+        // Extract config values first to avoid borrow conflicts
+        let safety_margin = self.config.safety_margin_bytes;
+        let auto_select = self.config.auto_select_workspace;
+        
+        // Get owned copy of disks to avoid borrow conflicts
+        let disks = self.get_disks_owned();
         
         // Find source disk
         let source_disk = self.disk_scanner
-            .find_disk_for_path(archive_path, disks)
+            .find_disk_for_path(archive_path, &disks)
             .cloned()
             .unwrap_or_else(|| {
                 // Fallback: root disk
@@ -98,11 +111,11 @@ impl StorageEngine {
                         used_bytes: 0,
                         is_removable: false,
                         is_system: true,
-                        device_path: None,
+                        device_path: String::new(),
                     })
             });
 
-        let space_needed = estimate.space_needed_for_rewrite.saturating_add(self.config.safety_margin_bytes);
+        let space_needed = estimate.space_needed_for_rewrite.saturating_add(safety_margin);
         let free_space = source_disk.free_bytes;
 
         debug!(
@@ -126,7 +139,7 @@ impl StorageEngine {
         }
 
         // Case 2: Find external disk with space
-        if self.config.auto_select_workspace {
+        if auto_select {
             let mut candidates: Vec<&DiskInfo> = disks
                 .iter()
                 .filter(|d| {

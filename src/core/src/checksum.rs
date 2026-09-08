@@ -1,11 +1,11 @@
 //! Checksum verification for archive integrity
 
 use std::path::Path;
-use std::pin::Pin;
-use std::task::{Context, Poll};
 use tokio::fs::File;
-use tokio::io::{AsyncRead, AsyncReadExt, ReadBuf};
+use tokio::io::{AsyncRead, AsyncReadExt};
 use blake3;
+use sha2::{Digest, Sha256};
+use xxhash_rust::xxh3::Xxh3;
 use tracing::debug;
 
 use crate::types::ChecksumAlgorithm;
@@ -43,18 +43,17 @@ impl HasherImpl for Blake3Hasher {
 }
 
 struct Sha256Hasher {
-    hasher: sha2::Sha256,
+    hasher: Sha256,
 }
 
 impl HasherImpl for Sha256Hasher {
     fn update(&mut self, data: &[u8]) {
-        use sha2::Digest;
         self.hasher.update(data);
     }
 
     fn finalize(&mut self) -> Vec<u8> {
-        use sha2::Digest;
-        self.hasher.finalize().to_vec()
+        let hasher = std::mem::replace(&mut self.hasher, Sha256::new());
+        hasher.finalize().to_vec()
     }
 
     fn algorithm_name(&self) -> &'static str {
@@ -63,7 +62,7 @@ impl HasherImpl for Sha256Hasher {
 }
 
 struct Xxh3Hasher {
-    hasher: xxhash_rust::xxh3::Xxh3,
+    hasher: Xxh3,
 }
 
 impl HasherImpl for Xxh3Hasher {
@@ -84,8 +83,8 @@ impl StreamingHasher {
     pub fn new(algorithm: ChecksumAlgorithm) -> Self {
         let hasher: Box<dyn HasherImpl> = match algorithm {
             ChecksumAlgorithm::Blake3 => Box::new(Blake3Hasher { hasher: blake3::Hasher::new() }),
-            ChecksumAlgorithm::Sha256 => Box::new(Sha256Hasher { hasher: sha2::Sha256::new() }),
-            ChecksumAlgorithm::Xxh3 => Box::new(Xxh3Hasher { hasher: xxhash_rust::xxh3::Xxh3::new() }),
+            ChecksumAlgorithm::Sha256 => Box::new(Sha256Hasher { hasher: Sha256::new() }),
+            ChecksumAlgorithm::Xxh3 => Box::new(Xxh3Hasher { hasher: Xxh3::new() }),
         };
 
         Self {

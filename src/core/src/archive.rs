@@ -255,10 +255,10 @@ impl ArchiveOperator {
         let mut child = cmd.spawn()?;
 
         // Monitor progress from stderr
+        let mut bytes_written = 0u64;
         if let Some(stderr) = child.stderr.take() {
             let mut reader = BufReader::new(stderr).lines();
             let mut last_update = Instant::now();
-            let mut bytes_written = 0u64;
 
             while let Some(line) = reader.next_line().await? {
                 // Parse 7z progress output
@@ -293,7 +293,14 @@ impl ArchiveOperator {
         stats.duration = start.elapsed();
 
         if !status.success() {
-            let stderr = String::from_utf8_lossy(&child.stderr.take().unwrap_or_default()).to_string();
+            let stderr = if let Some(mut stderr) = child.stderr.take() {
+                let mut buf = Vec::new();
+                use tokio::io::AsyncReadExt;
+                let _ = stderr.read_to_end(&mut buf).await;
+                String::from_utf8_lossy(&buf).to_string()
+            } else {
+                String::new()
+            };
             return Err(TripleWrapperError::CompressionFailed(stderr));
         }
 
@@ -418,7 +425,14 @@ impl ArchiveOperator {
         stats.duration = start.elapsed();
 
         if !status.success() {
-            let stderr = String::from_utf8_lossy(&child.stderr.take().unwrap_or_default()).to_string();
+            let stderr = if let Some(mut stderr) = child.stderr.take() {
+                let mut buf = Vec::new();
+                use tokio::io::AsyncReadExt;
+                let _ = stderr.read_to_end(&mut buf).await;
+                String::from_utf8_lossy(&buf).to_string()
+            } else {
+                String::new()
+            };
             return Err(TripleWrapperError::CompressionFailed(stderr));
         }
 
@@ -462,7 +476,14 @@ impl ArchiveOperator {
         stats.duration = start.elapsed();
 
         if !status.success() {
-            let stderr = String::from_utf8_lossy(&child.stderr.take().unwrap_or_default()).to_string();
+            let stderr = if let Some(mut stderr) = child.stderr.take() {
+                let mut buf = Vec::new();
+                use tokio::io::AsyncReadExt;
+                let _ = stderr.read_to_end(&mut buf).await;
+                String::from_utf8_lossy(&buf).to_string()
+            } else {
+                String::new()
+            };
             return Err(TripleWrapperError::CompressionFailed(stderr));
         }
 
@@ -474,13 +495,15 @@ impl ArchiveOperator {
         let format = ArchiveFormat::from_extension(&archive.to_path_buf())
             .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
 
-        let mut cmd = match format {
-            ArchiveFormat::SevenZ | ArchiveFormat::Zip => {
-                Command::new(&self.sevenz_path)
-                    .args(["t", archive.to_str().unwrap()])
-            }
-            _ => Command::new(&self.tar_path)
-                .args(["-tf", archive.to_str().unwrap()]),
+        let archive_str = archive.to_str().unwrap();
+        let mut cmd = if matches!(format, ArchiveFormat::SevenZ | ArchiveFormat::Zip) {
+            let mut cmd = Command::new(&self.sevenz_path);
+            cmd.args(["t", archive_str]);
+            cmd
+        } else {
+            let mut cmd = Command::new(&self.tar_path);
+            cmd.args(["-tf", archive_str]);
+            cmd
         };
 
         cmd.stdout(Stdio::null())

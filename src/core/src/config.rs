@@ -1,7 +1,7 @@
 //! Configuration management
 
 use std::path::{Path, PathBuf};
-use config::{Config as ConfigBuilder, File, FileFormat, Environment};
+use config::{Config, File, Environment};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use dirs_next::config_dir;
@@ -19,7 +19,7 @@ impl ConfigManager {
     /// Load configuration from default locations
     pub fn load() -> Result<Self> {
         let config_path = Self::find_config_file();
-        let mut builder = ConfigBuilder::default();
+        let mut builder = Config::builder();
 
         // Load from file if exists
         if let Some(path) = &config_path {
@@ -29,7 +29,7 @@ impl ConfigManager {
         // Load from environment variables (prefix: TW_)
         builder = builder.add_source(Environment::with_prefix("TW").separator("_"));
 
-        let config: AppConfig = builder.try_deserialize()?;
+        let config: AppConfig = builder.build()?.try_deserialize()?;
 
         Ok(Self {
             config,
@@ -62,7 +62,7 @@ impl ConfigManager {
         }
 
         let toml = toml::to_string_pretty(&self.config)
-            .map_err(|e| TripleWrapperError::Config(e.to_string()))?;
+            .map_err(|e| TripleWrapperError::Internal(e.to_string()))?;
 
         std::fs::write(&path, toml)?;
         info!("Configuration saved to {}", path.display());
@@ -135,9 +135,9 @@ mod tests {
         manager.save().unwrap();
         
         // Reload
-        let mut builder = config::Config::default();
+        let mut builder = Config::builder();
         builder = builder.add_source(File::from(config_path));
-        let loaded: AppConfig = builder.try_deserialize().unwrap();
+        let loaded: AppConfig = builder.build().unwrap().try_deserialize().unwrap();
         
         assert_eq!(loaded.default_compression_level, 9);
     }

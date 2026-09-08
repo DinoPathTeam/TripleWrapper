@@ -2,7 +2,15 @@
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+use std::sync::OnceLock;
 use std::time::Duration;
+use zvariant_derive::Type;
+
+static CPU_COUNT: OnceLock<usize> = OnceLock::new();
+
+pub fn get_cpu_count() -> usize {
+    *CPU_COUNT.get_or_init(|| num_cpus::get())
+}
 
 /// Unique operation identifier
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -80,7 +88,7 @@ impl ArchiveFormat {
 }
 
 /// Disk/volume information
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, zvariant::Type)]
 pub struct DiskInfo {
     pub mount_point: PathBuf,
     pub label: String,
@@ -90,7 +98,7 @@ pub struct DiskInfo {
     pub used_bytes: u64,
     pub is_removable: bool,
     pub is_system: bool,
-    pub device_path: Option<PathBuf>, // /dev/sdX
+    pub device_path: String, // /dev/sdX (empty if unknown)
 }
 
 impl DiskInfo {
@@ -115,8 +123,24 @@ impl DiskInfo {
     }
 }
 
+impl Default for DiskInfo {
+    fn default() -> Self {
+        Self {
+            mount_point: PathBuf::new(),
+            label: String::new(),
+            filesystem: String::new(),
+            total_bytes: 0,
+            free_bytes: 0,
+            used_bytes: 0,
+            is_removable: false,
+            is_system: false,
+            device_path: String::new(),
+        }
+    }
+}
+
 /// Compression estimation
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, zvariant::Type)]
 pub struct CompressionEstimate {
     pub current_size: u64,
     pub bytes_to_remove: u64,
@@ -261,7 +285,7 @@ impl Default for Config {
                 PathBuf::from("/media"),
                 PathBuf::from("/run/media"),
             ],
-            max_parallel_jobs: num_cpus::get(),
+            max_parallel_jobs: get_cpu_count(),
             verify_checksums: true,
             checksum_algorithm: ChecksumAlgorithm::Blake3,
             auto_select_workspace: true,

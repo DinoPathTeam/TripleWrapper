@@ -2,6 +2,7 @@
 
 use std::path::Path;
 use std::time::Duration;
+use std::os::unix::ffi::OsStrExt;
 use tracing::info;
 
 /// Format bytes as human-readable string

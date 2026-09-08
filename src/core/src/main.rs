@@ -1,6 +1,7 @@
 //! TripleWrapper Core - Main binary
 
 use clap::{Parser, Subcommand};
+use std::path::PathBuf;
 use tracing::{info, error, Level};
 use tracing_subscriber::{fmt, EnvFilter};
 
@@ -10,6 +11,7 @@ use triplewrapper_core::{
     disk::DiskScanner,
     types::{OperationType, OperationRequest, CompressionEstimate, StorageVerdict},
     utils::{format_bytes, format_duration},
+    error::TripleWrapperError,
     Result,
 };
 
@@ -137,7 +139,8 @@ async fn cmd_disks(json: bool) -> Result<()> {
 
 async fn cmd_analyze(archive: String, remove: u64, add: u64, ratio: f32, json: bool) -> Result<()> {
     let mut engine = StorageEngine::new(Default::default());
-    let verdict = engine.quick_verdict(&archive.into(), remove, add);
+    let archive_path = PathBuf::from(archive);
+    let verdict = engine.quick_verdict(&archive_path, remove, add);
     
     // Override estimate with provided ratio
     // (In real implementation, would pass ratio to quick_verdict)
@@ -152,7 +155,8 @@ async fn cmd_analyze(archive: String, remove: u64, add: u64, ratio: f32, json: b
 
 async fn cmd_list(archive: String, json: bool) -> Result<()> {
     let operator = ArchiveOperator::new()?;
-    let metadata = operator.list(&archive.into()).await?;
+    let archive_path = PathBuf::from(archive);
+    let metadata = operator.list(&archive_path).await?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&metadata)?);
@@ -179,12 +183,13 @@ async fn cmd_list(archive: String, json: bool) -> Result<()> {
 
 async fn cmd_extract(archive: String, output: Option<String>, files: Vec<String>, json: bool) -> Result<()> {
     let operator = ArchiveOperator::new()?;
-    let out_dir = output.map(std::path::PathBuf::from).unwrap_or_else(std::env::current_dir);
+    let out_dir = output.map(std::path::PathBuf::from).unwrap_or_else(|| std::env::current_dir().unwrap());
+    let archive_path = PathBuf::from(archive);
     
-    info!("Extracting {} to {}", archive, out_dir.display());
+    info!("Extracting {} to {}", archive_path.display(), out_dir.display());
     
     let stats = operator.extract(
-        &archive.into(),
+        &archive_path,
         &out_dir,
         if files.is_empty() { None } else { Some(&files) },
         None,
@@ -203,7 +208,8 @@ async fn cmd_extract(archive: String, output: Option<String>, files: Vec<String>
 
 async fn cmd_test(archive: String, json: bool) -> Result<()> {
     let operator = ArchiveOperator::new()?;
-    let ok = operator.test(&archive.into()).await?;
+    let archive_path = PathBuf::from(archive);
+    let ok = operator.test(&archive_path).await?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&serde_json::json!({ "ok": ok }))?);
