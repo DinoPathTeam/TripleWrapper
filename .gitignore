@@ -1,0 +1,68 @@
+# Rust
+/target
+**/*.rs.bk
+Cargo.lock
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+.env
+.venv/
+venv/
+ENV/
+
+# Meson
+/builddir/
+/meson-private/
+/meson-logs/
+
+# Flatpak
+/flatpak/build-dir/
+/flatpak/*.flatpak
+/flatpak/.flatpak-builder/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+
+# Agent files (per AGENTS.md)
+.agent/
+agent-tasks.md
+agent-todo.md
+*.agent-temp
+
+# Local config
+config.toml
+local.toml
+
+# Test outputs
+test_output/
+coverage/
+
+# Packaging
+*.deb
+*.rpm
+*.AppImage

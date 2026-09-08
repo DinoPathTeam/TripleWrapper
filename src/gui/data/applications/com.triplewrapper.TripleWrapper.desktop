@@ -1,0 +1,12 @@
+[Desktop Entry]
+Type=Application
+Name=TripleWrapper
+GenericName=Archive Manager
+Comment=Smart archive manager with intelligent storage decisions
+Exec=triplewrapper-gui
+Icon=com.triplewrapper.TripleWrapper
+Terminal=false
+Categories=Utility;Archiving;GTK;
+StartupNotify=true
+Keywords=archive;compress;extract;7zip;zip;tar;
+MimeType=application/x-7z-compressed;application/zip;application/x-tar;application/gzip;application/x-xz;application/x-bzip2;application/x-zstd;

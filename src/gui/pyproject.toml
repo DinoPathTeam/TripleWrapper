@@ -1,0 +1,51 @@
+[project]
+name = "triplewrapper-gui"
+version = "0.1.0"
+description = "GTK4/Libadwaita GUI for TripleWrapper"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [{name = "DinoPathTeam"}]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: X11 Applications :: GTK",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+requires-python = ">=3.11"
+dependencies = [
+    "PyGObject>=3.48",
+    "pycairo>=1.23",
+    "graphene>=0.2",
+    "pydbus>=0.6",
+    "psutil>=5.9",
+    "tomli>=2.0",
+    "tomli-w>=1.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "ruff>=0.3",
+    "mypy>=1.0",
+]
+
+[build-system]
+requires = ["meson-python>=0.15", "meson>=1.3"]
+build-backend = "mesonpy"
+
+[tool.mesonpy]
+native-file = "meson.build"
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true

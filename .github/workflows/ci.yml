@@ -1,0 +1,154 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+env:
+  CARGO_TERM_COLOR: always
+  RUSTFLAGS: "-D warnings"
+
+jobs:
+  # Rust core checks
+  rust-core:
+    name: Rust Core
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./src/core
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+      
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+      
+      - name: Run clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
+      
+      - name: Build
+        run: cargo build --release --all-targets
+      
+      - name: Run tests
+        run: cargo test --all-targets
+
+  # Python GUI checks
+  python-gui:
+    name: Python GUI
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ./src/gui
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libgraphene-1.0-dev \
+            libcairo2-dev \
+            python3-gi \
+            python3-gi-cairo \
+            gir1.2-gtk-4.0 \
+            gir1.2-adw-1 \
+            p7zip-full \
+            pixz
+      
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[dev]"
+      
+      - name: Run ruff
+        run: ruff check .
+      
+      - name: Run mypy
+        run: mypy triplewrapper_gui
+      
+      - name: Run tests
+        run: pytest tests/ -v
+
+  # Integration test
+  integration:
+    name: Integration Test
+    runs-on: ubuntu-latest
+    needs: [rust-core, python-gui]
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Build core
+        run: |
+          cd src/core
+          cargo build --release
+      
+      - name: Test CLI
+        run: |
+          cd src/core
+          ./target/release/triplewrapper --help
+          ./target/release/triplewrapper disks
+      
+      - name: Test GUI imports
+        run: |
+          cd src/gui
+          python -c "import triplewrapper_gui; print('GUI imports OK')"
+
+  # Flatpak build
+  flatpak:
+    name: Flatpak Build
+    runs-on: ubuntu-latest
+    needs: [rust-core, python-gui]
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Flatpak Builder
+        uses: flatpak/flatpak-github-actions/setup-flatpak@v2
+      
+      - name: Install GNOME SDK
+        run: |
+          flatpak install --user -y flathub org.gnome.Platform//46 org.gnome.Sdk//46
+      
+      - name: Build Flatpak
+        run: |
+          flatpak-builder --force-clean --user --install-deps-from=flathub \
+            build-dir flatpak/com.triplewrapper.TripleWrapper.json
+      
+      - name: Test Flatpak
+        run: |
+          flatpak run --command=triplewrapper-gui com.triplewrapper.TripleWrapper --help
+
+  # Release
+  release:
+    name: Create Release
+    runs-on: ubuntu-latest
+    needs: [integration, flatpak]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          generate_release_notes: true
+          files: |
+            src/core/target/release/triplewrapper
+            flatpak/build-dir/com.triplewrapper.TripleWrapper.flatpak
