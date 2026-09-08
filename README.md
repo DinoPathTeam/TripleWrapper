@@ -212,10 +212,39 @@ flatpak run com.triplewrapper.TripleWrapper
 
 ## Roadmap
 
-- [ ] **v0.2**: Batch operations, queue management
-- [ ] **v0.3**: Cloud storage backends (rclone integration)
-- [ ] **v0.4**: Plugin system for custom formats
-- [ ] **v1.0**: Stable API, Flathub publication
+### ✅ v0.1 - Foundation (COMPLETED)
+- [x] **Core Architecture**: Rust core + Python/GTK4 GUI with DBus IPC
+- [x] **Storage Decision Engine**: Internal/External/Critical verdict logic
+- [x] **Disk Scanner**: sysinfo + lsblk + statvfs for accurate space detection
+- [x] **Archive Operator**: 7z/tar/pixz wrapper with progress parsing
+- [x] **Checksum Verification**: Streaming BLAKE3/SHA256/XXH3
+- [x] **Progress Monitor**: Real-time telemetry + /proc/pid/io monitoring
+- [x] **Steam-style Graph Widget**: Read/Write/Compress MB/s + ETA (Cairo)
+- [x] **Donut Chart Widget**: Animated keep/remove/add breakdown
+- [x] **Disk Panel Widget**: GNOME Disks style with selection
+- [x] **Flatpak Manifest**: Sandboxed with host fs + udisks2 permissions
+- [x] **CI/CD Pipeline**: GitHub Actions (rust-core, python-gui, integration, flatpak)
+- [x] **MIT License**
+
+### 🔄 v0.2 - Batch Operations (PLANNED)
+- [ ] Batch operations queue management
+- [ ] Pause/resume operations
+- [ ] Multiple archive simultaneous processing
+
+### 🔄 v0.3 - Cloud & Advanced (PLANNED)
+- [ ] Cloud storage backends (rclone integration)
+- [ ] Network mount auto-detection
+- [ ] Encrypted archive support
+
+### 🔄 v0.4 - Extensibility (PLANNED)
+- [ ] Plugin system for custom formats
+- [ ] Scripting API (Lua/Python)
+
+### 🔄 v1.0 - Stable Release (PLANNED)
+- [ ] Stable API
+- [ ] Flathub publication
+- [ ] AUR package
+- [ ] Comprehensive documentation
 
 ## License
 
