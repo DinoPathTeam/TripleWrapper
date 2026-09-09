@@ -6,7 +6,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import GObject, Gtk, Gio
+from gi.repository import Gdk, Gio, GObject, Gtk
 
 
 class WelcomeView(Gtk.Box):
@@ -80,6 +80,11 @@ class WelcomeView(Gtk.Box):
         inner.append(btn_row)
         self.append(card)
 
+        # Drag & drop support
+        drop_target = Gtk.DropTarget.new(Gio.File, Gdk.DragAction.COPY)
+        drop_target.connect("drop", self._on_drop)
+        card.add_controller(drop_target)
+
         # Supported formats hint
         hint = Gtk.Label(
             label="Formatos: 7z · ZIP · TAR · TAR.GZ · TAR.XZ · TAR.ZST · TAR.BZ2 · Pixz"
@@ -114,6 +119,19 @@ class WelcomeView(Gtk.Box):
         dialog.set_filters(filters)
         dialog.open(self.get_root(), None, self._on_dialog_done)
 
+    def _on_drop(self, _target, value, _x, _y) -> bool:
+        path = value.get_path() if value is not None else None
+        if path:
+            self._select_path(path)
+            return True
+        return False
+
+    def _select_path(self, path: str) -> None:
+        self.current_path = path
+        self._path_label.set_label(path.rsplit("/", 1)[-1])
+        self._analyze_btn.set_sensitive(True)
+        self.emit("file-selected", path)
+
     def _on_dialog_done(self, dialog, result) -> None:
         try:
             file = dialog.open_finish(result)
@@ -124,10 +142,7 @@ class WelcomeView(Gtk.Box):
         path = file.get_path()
         if path is None:
             return
-        self.current_path = path
-        self._path_label.set_label(path.rsplit("/", 1)[-1])
-        self._analyze_btn.set_sensitive(True)
-        self.emit("file-selected", path)
+        self._select_path(path)
 
     # ----------------------------------------------------------------- API
     def set_busy(self, busy: bool) -> None:

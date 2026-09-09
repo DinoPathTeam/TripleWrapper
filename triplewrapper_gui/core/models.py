@@ -10,13 +10,14 @@ class AnalysisReport:
 
     archive_path: str
     archive_bytes: int
-    needed_bytes: int        # current_size + estimated_final_size
-    free_bytes: int          # free space on source
-    external_free_bytes: int | None
-    suggested_workspace: str
-    status: str              # "ok" | "external" | "critical"
-    status_label: str
-    blake3_expected: str
+    used_bytes: int = 0
+    needed_bytes: int = 0        # current_size + estimated_final_size
+    free_bytes: int = 0          # free space on source
+    external_free_bytes: int | None = None
+    suggested_workspace: str = ""
+    status: str = "critical"              # "ok" | "external" | "critical"
+    status_label: str = ""
+    blake3_expected: str = ""
 
     @property
     def human_archive(self) -> str:

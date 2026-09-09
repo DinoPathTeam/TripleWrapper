@@ -83,6 +83,25 @@ enum Commands {
     
     /// Run DBus service
     Serve,
+
+    /// Run a real operation emitting JSON tick events on stdout
+    Run {
+        /// Archive file path
+        #[arg(short, long)]
+        archive: String,
+
+        /// Workspace directory (cache / output base)
+        #[arg(short, long)]
+        workspace: String,
+
+        /// Operation: test | extract
+        #[arg(short, long, default_value = "test")]
+        operation: String,
+
+        /// Output directory for extract (defaults to workspace)
+        #[arg(short, long)]
+        output: Option<String>,
+    },
     
     /// Queue management commands
     #[command(subcommand)]
@@ -186,6 +205,7 @@ async fn main() -> Result<()> {
         .with_target(false)
         .with_thread_ids(false)
         .with_thread_names(false)
+        .with_writer(std::io::stderr)
         .init();
 
     match cli.command {
@@ -199,6 +219,9 @@ async fn main() -> Result<()> {
         }
         Commands::Test { archive } => cmd_test(archive, cli.json).await,
         Commands::Serve => cmd_serve().await,
+        Commands::Run { archive, workspace, operation, output } => {
+            cmd_run(archive, workspace, operation, output).await
+        }
         Commands::Queue(cmd) => cmd_queue(cmd, cli.json).await,
     }
 }
@@ -228,18 +251,151 @@ async fn cmd_disks(json: bool) -> Result<()> {
 
 async fn cmd_analyze(archive: String, remove: u64, add: u64, ratio: f32, json: bool) -> Result<()> {
     let mut engine = StorageEngine::new(Default::default());
-    let archive_path = PathBuf::from(archive);
+    let archive_path = PathBuf::from(&archive);
     let verdict = engine.quick_verdict(&archive_path, remove, add);
-    
+
     // Override estimate with provided ratio
     // (In real implementation, would pass ratio to quick_verdict)
 
     if json {
-        println!("{}", serde_json::to_string_pretty(&verdict)?);
+        let report = analysis_report_from_verdict(&archive, &verdict);
+        let event = serde_json::json!({"kind": "analysis", "data": report});
+        println!("{}", serde_json::to_string(&event)?);
     } else {
         print_verdict(&verdict);
     }
     Ok(())
+}
+
+fn analysis_report_from_verdict(archive: &str, verdict: &StorageVerdict) -> serde_json::Value {
+    match verdict {
+        StorageVerdict::InternalOk { source_disk, estimate, message } => {
+            serde_json::json!({
+                "archive_path": archive,
+                "archive_bytes": estimate.current_size,
+                "used_bytes": source_disk.used_bytes,
+                "needed_bytes": estimate.space_needed_for_rewrite,
+                "free_bytes": source_disk.free_bytes,
+                "external_free_bytes": null,
+                "suggested_workspace": source_disk.mount_point,
+                "status": "ok",
+                "status_label": message,
+                "blake3_expected": "",
+            })
+        }
+        StorageVerdict::ExternalRequired { source_disk, workspace_disk, estimate, workdir, message, .. } => {
+            serde_json::json!({
+                "archive_path": archive,
+                "archive_bytes": estimate.current_size,
+                "used_bytes": source_disk.used_bytes,
+                "needed_bytes": estimate.space_needed_for_rewrite,
+                "free_bytes": source_disk.free_bytes,
+                "external_free_bytes": workspace_disk.free_bytes,
+                "suggested_workspace": workdir,
+                "status": "external",
+                "status_label": message,
+                "blake3_expected": "",
+            })
+        }
+        StorageVerdict::CriticalError { source_disk, estimate, best_available_gb, message } => {
+            serde_json::json!({
+                "archive_path": archive,
+                "archive_bytes": estimate.current_size,
+                "used_bytes": source_disk.used_bytes,
+                "needed_bytes": estimate.space_needed_for_rewrite,
+                "free_bytes": source_disk.free_bytes,
+                "external_free_bytes": (*best_available_gb * 1_073_741_824.0) as u64,
+                "suggested_workspace": "",
+                "status": "critical",
+                "status_label": message,
+                "blake3_expected": "",
+            })
+        }
+    }
+}
+
+fn emit_tick(stage: &str, processed: u64, total: u64, read_mbps: f64, write_mbps: f64, compress_mbps: f64) {
+    let progress = if total > 0 {
+        (processed as f64 / total as f64).clamp(0.0, 1.0)
+    } else {
+        0.0
+    };
+    let event = serde_json::json!({
+        "kind": "tick",
+        "data": {
+            "stage": stage,
+            "progress": progress,
+            "read_mbps": read_mbps,
+            "write_mbps": write_mbps,
+            "compress_mbps": compress_mbps,
+            "bytes_processed": processed,
+            "bytes_total": total,
+        }
+    });
+    if let Ok(line) = serde_json::to_string(&event) {
+        println!("{line}");
+    }
+}
+
+fn emit_error(message: &str) {
+    if let Ok(line) = serde_json::to_string(&serde_json::json!({"kind": "error", "message": message})) {
+        println!("{line}");
+    }
+}
+
+async fn cmd_run(archive: String, workspace: String, operation: String, output: Option<String>) -> Result<()> {
+    use tokio::sync::mpsc;
+
+    let archive_path = PathBuf::from(&archive);
+    let workspace_path = PathBuf::from(&workspace);
+    if !archive_path.exists() {
+        emit_error(&format!("Archive not found: {archive}"));
+        return Err(TripleWrapperError::ArchiveNotFound(archive_path));
+    }
+    if let Err(e) = std::fs::create_dir_all(&workspace_path) {
+        emit_error(&format!("Cannot create workspace: {e}"));
+        return Err(TripleWrapperError::Io(e));
+    }
+
+    let total = std::fs::metadata(&archive_path).map(|m| m.len()).unwrap_or(0);
+    emit_tick("Iniciando", 0, total, 0.0, 0.0, 0.0);
+
+    let operator = ArchiveOperator::new()?;
+    match operation.to_lowercase().as_str() {
+        "test" => {
+            let ok = operator.test(&archive_path).await?;
+            if ok {
+                emit_tick("Verificación completa", total, total, 0.0, 0.0, 0.0);
+                Ok(())
+            } else {
+                emit_error("Archive integrity check failed");
+                Err(TripleWrapperError::CompressionFailed("integrity check failed".into()))
+            }
+        }
+        _ => {
+            let out_dir = output.map(PathBuf::from).unwrap_or(workspace_path);
+            let _ = std::fs::create_dir_all(&out_dir);
+            let (tx, mut rx) = mpsc::unbounded_channel();
+            let archive_clone = archive_path.clone();
+            let out_clone = out_dir.clone();
+            let handle = tokio::spawn(async move {
+                operator.extract(&archive_clone, &out_clone, None, None, Some(tx)).await
+            });
+            while let Some(t) = rx.recv().await {
+                emit_tick(
+                    if t.current_file.is_empty() { "Extrayendo" } else { &t.current_file },
+                    t.bytes_processed,
+                    total,
+                    t.bytes_per_second_read,
+                    t.bytes_per_second_write,
+                    t.bytes_per_second_compress,
+                );
+            }
+            let stats = handle.await.map_err(|e| TripleWrapperError::Internal(e.to_string()))??;
+            emit_tick("Extracción completa", total.max(stats.bytes_written), total.max(stats.bytes_written).max(1), stats.avg_read_mbps, stats.avg_write_mbps, stats.avg_compress_mbps);
+            Ok(())
+        }
+    }
 }
 
 async fn cmd_list(archive: String, json: bool) -> Result<()> {
@@ -373,7 +529,7 @@ async fn cmd_queue(cmd: QueueCommands, json: bool) -> Result<()> {
         ..Default::default()
     };
     
-    let queue = OperationQueue::new(config)?;
+    let mut queue = OperationQueue::new(config)?;
     queue.init().await?;
     
     match cmd {
@@ -415,7 +571,7 @@ async fn cmd_queue(cmd: QueueCommands, json: bool) -> Result<()> {
             cmd_queue_cleanup(&queue, max_age_seconds, json).await
         }
         QueueCommands::Start { workers } => {
-            cmd_queue_start(&queue, workers, json).await
+            cmd_queue_start(&mut queue, workers, json).await
         }
         QueueCommands::Stop => {
             cmd_queue_stop(&queue, json).await
@@ -622,7 +778,8 @@ async fn cmd_queue_cleanup(queue: &OperationQueue, max_age_seconds: u64, json: b
     Ok(())
 }
 
-async fn cmd_queue_start(queue: &OperationQueue, workers: usize, _json: bool) -> Result<()> {
+async fn cmd_queue_start(queue: &mut OperationQueue, workers: usize, _json: bool) -> Result<()> {
+    queue.set_max_concurrent(workers);
     println!("Starting {} queue workers...", workers);
     println!("Workers will run until 'queue stop' is called or process exits");
     

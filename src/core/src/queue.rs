@@ -185,61 +185,29 @@ impl OperationQueue {
         Ok(())
     }
 
-    /// Load persisted queue (sync version for internal use)
-    fn load_from_disk(&self) -> Result<()> {
-        if !self.config.persistence_path.exists() {
-            return Ok(());
-        }
-
-        let data = std::fs::read(&self.config.persistence_path)?;
-        if data.is_empty() {
-            return Ok(());
-        }
-
-        let items: Vec<QueueItem> = serde_json::from_slice(&data)?;
-        
-        // Only restore pending/paused items; running items become pending
-        let mut queue_items = VecDeque::new();
-        for mut item in items {
-            match item.status {
-                QueueItemStatus::Running => {
-                    item.status = QueueItemStatus::Pending;
-                    item.started_at = None;
-                    queue_items.push_back(item);
-                }
-                QueueItemStatus::Paused | QueueItemStatus::Pending => {
-                    queue_items.push_back(item);
-                }
-                _ => {} // Drop completed/failed/cancelled
-            }
-        }
-
-        // Re-sort by priority
-        let mut vec: Vec<_> = queue_items.into();
-        vec.sort_by(|a, b| b.priority.cmp(&a.priority));
-        *self.items.blocking_write() = vec.into();
-
-        Ok(())
-    }
-
     /// Add an operation to the queue
     pub async fn enqueue(&self, request: OperationRequest, priority: Option<Priority>) -> Result<OperationId> {
         let priority = priority.unwrap_or(self.config.default_priority);
-        let item = QueueItem::new(request, priority);
-        let id = item.id;
+        let mut item = QueueItem::new(request, priority);
 
         {
             let mut items = self.items.write().await;
-            
+
+            // Persistent unique id: max existing + 1 (survives process restarts,
+            // unlike the in-process OperationId counter).
+            let next_id = items.iter().map(|i| i.id.0).max().unwrap_or(0) + 1;
+            item.id = OperationId(next_id);
+            let id = item.id;
+
             // Insert based on priority (highest first)
             let insert_pos = items.iter().position(|i| i.priority < priority).unwrap_or(items.len());
             items.insert(insert_pos, item);
+
+            self.notify.notify_one();
+            drop(items);
+            self.persist_async().await?;
+            return Ok(id);
         }
-
-        self.notify.notify_one();
-        self.persist_async().await?;
-
-        Ok(id)
     }
 
     /// Add multiple operations at once (batch)
@@ -445,6 +413,11 @@ impl OperationQueue {
     /// Check if queue can accept more work
     pub async fn can_accept_work(&self) -> bool {
         self.running_count().await < self.config.max_concurrent_operations
+    }
+
+    /// Set max concurrent operations (e.g. from `queue start --workers N`)
+    pub fn set_max_concurrent(&mut self, n: usize) {
+        self.config.max_concurrent_operations = n.max(1);
     }
 
     /// Persist queue to disk

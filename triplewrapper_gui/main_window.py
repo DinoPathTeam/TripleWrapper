@@ -75,8 +75,11 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         clamp.set_margin_start(18)
         clamp.set_margin_end(18)
 
+        self._toast_overlay = Adw.ToastOverlay()
+        self._toast_overlay.set_child(clamp)
+
         page = Adw.NavigationPage(title="TripleWrapper")
-        page.set_child(clamp)
+        page.set_child(self._toast_overlay)
         self._nav.push(page)
 
         # Views
@@ -96,6 +99,7 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         self._welcome.connect("analyze-requested", self.on_analyze_requested)
 
         self._analysis.connect("start-requested", self.on_start_requested)
+        self._analysis.connect("enqueue-requested", self.on_enqueue_requested)
         self._analysis.connect("back-requested", lambda *_: self.go_welcome())
 
         self._progress.connect("done", self.on_done)
@@ -112,6 +116,7 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
 
     def go_analysis(self) -> None:
         self._stack.set_visible_child_name("analysis")
+        self.refresh_queue()
 
     def go_progress(self) -> None:
         self._stack.set_visible_child_name("progress")
@@ -139,6 +144,62 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         self.go_progress()
         self._bridge.start_operation(workspace)
 
+    def on_enqueue_requested(self, view) -> None:
+        import threading
+
+        archive = self._bridge._archive_path
+        workspace = self._analysis.get_selected_workspace()
+        if not archive:
+            self.show_toast("No hay archivo para encolar", priority=Adw.ToastPriority.HIGH)
+            return
+        threading.Thread(target=self._do_enqueue, args=(archive, workspace), daemon=True).start()
+
+    def _do_enqueue(self, archive: str, workspace: str | None) -> None:
+        from gi.repository import GLib
+
+        try:
+            op_id = self._bridge.queue_add(archive, "extract", "normal", workspace)
+            GLib.idle_add(
+                self.show_toast, f"Encolado con ID {op_id}",
+            )
+            GLib.idle_add(self.refresh_queue)
+        except Exception as exc:  # noqa: BLE001
+            GLib.idle_add(self.show_toast, f"No se pudo encolar: {exc}", Adw.ToastPriority.HIGH)
+
+    def refresh_queue(self) -> None:
+        import threading
+
+        threading.Thread(target=self._do_refresh_queue, daemon=True).start()
+
+    def _do_refresh_queue(self) -> None:
+        from gi.repository import GLib
+
+        from .widgets.queue_panel import Priority, QueueItem, QueueItemStatus
+        from .core.bridge import queue_items_from_raw
+
+        try:
+            raw = self._bridge.queue_list()
+            items = []
+            for entry in queue_items_from_raw(raw):
+                try:
+                    prio = Priority[entry["priority"].upper()]
+                except KeyError:
+                    prio = Priority.NORMAL
+                try:
+                    st = QueueItemStatus(entry["status"])
+                except ValueError:
+                    st = QueueItemStatus.PENDING
+                items.append(QueueItem(
+                    id=entry["id"], uuid="", operation=entry["operation"],
+                    archive=entry["archive"], output=None, priority=prio,
+                    status=st, progress=entry["progress"],
+                    current_file=entry["current_file"],
+                    error_message=entry["error_message"],
+                ))
+            GLib.idle_add(self._analysis.set_queue_items, items)
+        except Exception:
+            return
+
     def on_progress_tick(self, bridge, tick) -> None:
         self._progress.update_tick(tick)
 
@@ -156,6 +217,5 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
 
     # --------------------------------------------------------------- Helpers
     def show_toast(self, text: str, priority: Adw.ToastPriority = Adw.ToastPriority.NORMAL) -> None:
-        toast = Adw.Toast(title=text, priority=priority)
-        overlay = Adw.ToastOverlay()
-        overlay.add_toast(toast)
+        toast = Adw.Toast(title=text, priority=priority, timeout=5)
+        self._toast_overlay.add_toast(toast)

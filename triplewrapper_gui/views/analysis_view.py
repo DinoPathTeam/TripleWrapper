@@ -9,6 +9,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Gdk, Gtk, GObject
 
 from ..core.models import AnalysisReport
+from ..widgets.queue_panel import QueueItem, QueuePanelWidget
 from ..widgets.storage_donut import StorageDonut
 
 
@@ -18,6 +19,7 @@ class AnalysisView(Gtk.Box):
     __gtype_name__ = "TripleWrapperAnalysisView"
     __gsignals__ = {
         "start-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "enqueue-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "back-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
 
@@ -134,7 +136,33 @@ class AnalysisView(Gtk.Box):
         self._start_btn.connect("clicked", lambda *_: self.emit("start-requested"))
         actions.append(self._start_btn)
 
+        enqueue_btn = Gtk.Button(label="Encolar")
+        enqueue_btn.add_css_class("pill")
+        enqueue_btn.connect("clicked", lambda *_: self.emit("enqueue-requested"))
+        actions.append(enqueue_btn)
+
         self.append(actions)
+
+        # Queue card (real backend data)
+        queue_card = Gtk.Frame()
+        queue_card.add_css_class("card")
+        queue_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        queue_box.set_margin_top(16)
+        queue_box.set_margin_bottom(16)
+        queue_box.set_margin_start(16)
+        queue_box.set_margin_end(16)
+        queue_card.set_child(queue_box)
+
+        queue_title = Gtk.Label(label="Cola de operaciones")
+        queue_title.add_css_class("heading")
+        queue_title.set_halign(Gtk.Align.START)
+        queue_box.append(queue_title)
+
+        self._queue_panel = QueuePanelWidget()
+        self._queue_panel.set_size_request(0, 220)
+        queue_box.append(self._queue_panel)
+
+        self.append(queue_card)
 
     # ----------------------------------------------------------------- API
     def set_report(self, report: AnalysisReport) -> None:
@@ -198,6 +226,9 @@ class AnalysisView(Gtk.Box):
 
     def get_selected_workspace(self) -> str | None:
         return self._selected_workspace
+
+    def set_queue_items(self, items: list[QueueItem]) -> None:
+        self._queue_panel.set_items(items)
 
     # --------------------------------------------------------------- Helpers
     @staticmethod
