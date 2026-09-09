@@ -1,8 +1,8 @@
 //! Utility functions
 
+use std::os::unix::ffi::OsStrExt;
 use std::path::Path;
 use std::time::Duration;
-use std::os::unix::ffi::OsStrExt;
 use tracing::info;
 
 /// Format bytes as human-readable string
@@ -10,12 +10,12 @@ pub fn format_bytes(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB", "PB"];
     let mut size = bytes as f64;
     let mut unit_idx = 0;
-    
+
     while size >= 1024.0 && unit_idx < UNITS.len() - 1 {
         size /= 1024.0;
         unit_idx += 1;
     }
-    
+
     if unit_idx == 0 {
         format!("{} {}", bytes, UNITS[unit_idx])
     } else {
@@ -26,7 +26,7 @@ pub fn format_bytes(bytes: u64) -> String {
 /// Format duration as human-readable string
 pub fn format_duration(duration: Duration) -> String {
     let secs = duration.as_secs();
-    
+
     if secs < 60 {
         format!("{}s", secs)
     } else if secs < 3600 {
@@ -53,7 +53,7 @@ pub fn format_speed(bytes_per_sec: f64) -> String {
 pub fn get_free_space(path: &Path) -> std::io::Result<u64> {
     #[cfg(target_family = "unix")]
     {
-        use libc::{statvfs, c_char};
+        use libc::statvfs;
         let mut statfs: statvfs = unsafe { std::mem::zeroed() };
         let c_path = std::ffi::CString::new(path.as_os_str().as_bytes())?;
         let ret = unsafe { statvfs(c_path.as_ptr(), &mut statfs) };
@@ -97,11 +97,15 @@ pub fn get_tw_temp_dir() -> std::path::PathBuf {
 }
 
 /// Calculate ETA from bytes processed
-pub fn calculate_eta(bytes_processed: u64, bytes_total: u64, bytes_per_sec: f64) -> Option<Duration> {
+pub fn calculate_eta(
+    bytes_processed: u64,
+    bytes_total: u64,
+    bytes_per_sec: f64,
+) -> Option<Duration> {
     if bytes_per_sec <= 0.0 || bytes_total == 0 {
         return None;
     }
-    
+
     let remaining = bytes_total.saturating_sub(bytes_processed);
     let secs = (remaining as f64 / bytes_per_sec) as u64;
     Some(Duration::from_secs(secs))
@@ -112,40 +116,45 @@ pub async fn atomic_replace(src: &Path, dst: &Path) -> std::io::Result<()> {
     // Use renameat2 with RENAME_EXCHANGE if available, otherwise rename
     #[cfg(target_os = "linux")]
     {
-        use std::os::unix::fs::MetadataExt;
         use std::fs;
-        
+
         // Create temp file in same directory as dst
         let temp = dst.with_extension("tmp.tw");
         fs::rename(src, &temp)?;
-        
+
         // Atomic replace
         #[cfg(target_os = "linux")]
         {
             use libc::{renameat2, AT_FDCWD, RENAME_EXCHANGE};
             let dst_c = std::ffi::CString::new(dst.as_os_str().as_bytes())?;
             let temp_c = std::ffi::CString::new(temp.as_os_str().as_bytes())?;
-            
+
             let ret = unsafe {
-                renameat2(AT_FDCWD, temp_c.as_ptr(), AT_FDCWD, dst_c.as_ptr(), RENAME_EXCHANGE)
+                renameat2(
+                    AT_FDCWD,
+                    temp_c.as_ptr(),
+                    AT_FDCWD,
+                    dst_c.as_ptr(),
+                    RENAME_EXCHANGE,
+                )
             };
-            
+
             if ret == 0 {
                 // Clean up old file (now at temp)
                 let _ = fs::remove_file(&temp);
                 return Ok(());
             }
         }
-        
+
         // Fallback: simple rename
         fs::rename(&temp, dst)?;
     }
-    
+
     #[cfg(not(target_os = "linux"))]
     {
         std::fs::rename(src, dst)?;
     }
-    
+
     Ok(())
 }
 

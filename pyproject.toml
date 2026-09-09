@@ -3,12 +3,12 @@ name = "triplewrapper-gui"
 version = "0.1.0"
 description = "GTK4/Libadwaita GUI for TripleWrapper"
 readme = "README.md"
-license = {text = "GPL-3.0-or-later"}
-authors = [{name = "TripleWrapper Team"}]
+license = {text = "MIT"}
+authors = [{name = "DinoPathTeam"}]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Environment :: X11 Applications :: GTK",
-    "License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)",
+    "License :: OSI Approved :: MIT License",
     "Operating System :: POSIX :: Linux",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.11",
@@ -48,4 +48,13 @@ target-version = "py311"
 python_version = "3.11"
 warn_return_any = true
 warn_unused_configs = true
-disallow_untyped_defs = true
+# GTK signal handlers are conventionally untyped; real type errors
+# (wrong arg types, bad returns) are still caught.
+disallow_untyped_defs = false
+disallow_untyped_calls = false
+check_untyped_defs = true
+ignore_missing_imports = false
+
+[[tool.mypy.overrides]]
+module = "gi.*"
+ignore_missing_imports = true

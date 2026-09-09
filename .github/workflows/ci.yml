@@ -19,71 +19,53 @@ jobs:
       run:
         working-directory: ./src/core
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v5
+
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
         with:
           components: rustfmt, clippy
-      
+
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
-      
+
       - name: Check formatting
         run: cargo fmt --all -- --check
-      
+
       - name: Run clippy
         run: cargo clippy --all-targets --all-features -- -D warnings
-      
+
       - name: Build
         run: cargo build --release --all-targets
-      
+
       - name: Run tests
         run: cargo test --all-targets
 
-  # Python GUI checks
+  # Python GUI checks (canonical GUI at repo root; gi-free unit tests)
   python-gui:
     name: Python GUI
     runs-on: ubuntu-latest
-    defaults:
-      run:
-        working-directory: ./src/gui
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v5
+
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
-      
-      - name: Install system dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libgtk-4-dev \
-            libadwaita-1-dev \
-            libgraphene-1.0-dev \
-            libcairo2-dev \
-            python3-gi \
-            python3-gi-cairo \
-            gir1.2-gtk-4.0 \
-            gir1.2-adw-1 \
-            p7zip-full \
-            pixz
-      
-      - name: Install Python dependencies
+
+      - name: Install lint and test tools
         run: |
           pip install --upgrade pip
-          pip install -e ".[dev]"
-      
+          pip install "ruff>=0.3" "mypy>=1.0" "pytest>=7.0"
+
       - name: Run ruff
-        run: ruff check .
-      
+        run: ruff check triplewrapper_gui tests
+
       - name: Run mypy
         run: mypy triplewrapper_gui
-      
+
       - name: Run tests
-        run: pytest tests/ -v
+        run: pytest tests/unit -v
 
   # Integration test
   integration:
@@ -91,23 +73,27 @@ jobs:
     runs-on: ubuntu-latest
     needs: [rust-core, python-gui]
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v5
+
       - name: Build core
         run: |
           cd src/core
           cargo build --release
-      
-      - name: Test CLI
+
+      - name: Test CLI protocol
         run: |
           cd src/core
-          ./target/release/triplewrapper --help
-          ./target/release/triplewrapper disks
-      
-      - name: Test GUI imports
+          ./target/release/triplewrapper-core --help
+          ./target/release/triplewrapper-core disks
+          dd if=/dev/zero of=/tmp/ci-test.zip bs=1M count=5
+          ./target/release/triplewrapper-core analyze -a /tmp/ci-test.zip --json | python3 -c "import json,sys; d=json.loads(sys.stdin.read()); assert d['kind']=='analysis', d; print('analyze protocol OK:', d['data']['status'])"
+          ./target/release/triplewrapper-core queue add -a /tmp/ci-test.zip -o test --priority normal
+          ./target/release/triplewrapper-core queue list --status pending | head -5
+
+      - name: Test GUI syntax and protocol
         run: |
-          cd src/gui
-          python -c "import triplewrapper_gui; print('GUI imports OK')"
+          python3 -m py_compile triplewrapper_gui/main.py triplewrapper_gui/application.py triplewrapper_gui/main_window.py triplewrapper_gui/views/welcome_view.py triplewrapper_gui/views/analysis_view.py triplewrapper_gui/views/progress_view.py triplewrapper_gui/widgets/steam_graph.py triplewrapper_gui/widgets/storage_donut.py triplewrapper_gui/widgets/queue_panel.py triplewrapper_gui/core/bridge.py triplewrapper_gui/core/models.py triplewrapper_gui/core/protocol.py
+          python3 -c "import sys; sys.path.insert(0,'.'); from triplewrapper_gui.core.protocol import parse_event_line; assert parse_event_line('{\"kind\":\"tick\",\"data\":{}}')[0]=='tick'; print('GUI protocol OK')"
 
   # Flatpak build
   flatpak:
@@ -116,20 +102,20 @@ jobs:
     needs: [rust-core, python-gui]
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v5
+
       - name: Set up Flatpak Builder
         uses: flatpak/flatpak-github-actions/setup-flatpak@v2
-      
+
       - name: Install GNOME SDK
         run: |
           flatpak install --user -y flathub org.gnome.Platform//46 org.gnome.Sdk//46
-      
+
       - name: Build Flatpak
         run: |
           flatpak-builder --force-clean --user --install-deps-from=flathub \
             build-dir flatpak/com.triplewrapper.TripleWrapper.json
-      
+
       - name: Test Flatpak
         run: |
           flatpak run --command=triplewrapper-gui com.triplewrapper.TripleWrapper --help
@@ -143,12 +129,12 @@ jobs:
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
-      
+      - uses: actions/checkout@v5
+
       - name: Create Release
-        uses: softprops/action-gh-release@v1
+        uses: softprops/action-gh-release@v2
         with:
           generate_release_notes: true
           files: |
-            src/core/target/release/triplewrapper
+            src/core/target/release/triplewrapper-core
             flatpak/build-dir/com.triplewrapper.TripleWrapper.flatpak

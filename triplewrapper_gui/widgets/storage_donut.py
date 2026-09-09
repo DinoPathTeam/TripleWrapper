@@ -29,7 +29,6 @@ class StorageDonut(Gtk.DrawingArea):
 
     # --------------------------------------------------------------- Drawing
     def _draw(self, area: Gtk.DrawingArea, ctx, width: int, height: int) -> None:
-        import cairo  # noqa: WPS433
 
         cx, cy = width / 2, height / 2
         radius = min(width, height) / 2 - 6

@@ -1,15 +1,14 @@
 //! Core data types for TripleWrapper
 
 use serde::{Deserialize, Serialize};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::Duration;
-use zvariant_derive::Type;
 
 static CPU_COUNT: OnceLock<usize> = OnceLock::new();
 
 pub fn get_cpu_count() -> usize {
-    *CPU_COUNT.get_or_init(|| num_cpus::get())
+    *CPU_COUNT.get_or_init(num_cpus::get)
 }
 
 /// Unique operation identifier
@@ -45,7 +44,7 @@ pub enum ArchiveFormat {
 }
 
 impl ArchiveFormat {
-    pub fn from_extension(path: &PathBuf) -> Option<Self> {
+    pub fn from_extension(path: &Path) -> Option<Self> {
         let ext = path.extension()?.to_str()?.to_lowercase();
         match ext.as_str() {
             "7z" => Some(Self::SevenZ),
@@ -151,9 +150,16 @@ pub struct CompressionEstimate {
 }
 
 impl CompressionEstimate {
-    pub fn new(current_size: u64, bytes_to_remove: u64, bytes_to_add: u64, compression_ratio: f32) -> Self {
+    pub fn new(
+        current_size: u64,
+        bytes_to_remove: u64,
+        bytes_to_add: u64,
+        compression_ratio: f32,
+    ) -> Self {
         let raw_added = (bytes_to_add as f64 * compression_ratio as f64) as u64;
-        let estimated_final = current_size.saturating_sub(bytes_to_remove).saturating_add(raw_added);
+        let estimated_final = current_size
+            .saturating_sub(bytes_to_remove)
+            .saturating_add(raw_added);
         let space_needed = current_size.saturating_add(estimated_final); // In-place safe: original + new
 
         Self {
@@ -198,10 +204,10 @@ pub enum StorageVerdict {
 #[serde(rename_all = "lowercase")]
 pub enum OperationType {
     Extract,
-    Modify,  // delete + add
-    Clean,   // delete only
-    Test,    // integrity check
-    List,    // list contents
+    Modify, // delete + add
+    Clean,  // delete only
+    Test,   // integrity check
+    List,   // list contents
 }
 
 /// Operation status
@@ -262,10 +268,10 @@ pub struct ArchiveMetadata {
 /// Configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
-    pub default_compression_level: u8,      // 1-9
-    pub default_compression_ratio: f32,     // for estimation
-    pub safety_margin_bytes: u64,           // extra space required
-    pub cache_directories: Vec<PathBuf>,    // preferred cache locations
+    pub default_compression_level: u8,   // 1-9
+    pub default_compression_ratio: f32,  // for estimation
+    pub safety_margin_bytes: u64,        // extra space required
+    pub cache_directories: Vec<PathBuf>, // preferred cache locations
     pub max_parallel_jobs: usize,
     pub verify_checksums: bool,
     pub checksum_algorithm: ChecksumAlgorithm,

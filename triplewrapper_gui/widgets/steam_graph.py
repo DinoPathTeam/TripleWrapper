@@ -39,7 +39,6 @@ class SteamGraph(Gtk.DrawingArea):
 
     # --------------------------------------------------------------- Drawing
     def _draw(self, area: Gtk.DrawingArea, ctx, width: int, height: int) -> None:
-        import cairo  # noqa: WPS433
 
         # Background
         ctx.set_source_rgba(0, 0, 0, 0)

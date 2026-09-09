@@ -1,32 +1,25 @@
 //! Batch Operations Queue Management
 
+use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
-use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use serde::{Deserialize, Serialize};
-use tokio::sync::{mpsc, Notify, RwLock};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use tokio::sync::{Notify, RwLock};
 use uuid::Uuid;
 
-use crate::types::{OperationId, OperationType, OperationRequest, OperationStatus, ProgressTelemetry};
+use crate::types::{OperationId, OperationRequest, ProgressTelemetry};
 use crate::{Result, TripleWrapperError};
 
-use dirs_next;
-
 /// Priority levels for queued operations
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Default, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Priority {
     Low = 0,
+    #[default]
     Normal = 1,
     High = 2,
     Critical = 3,
-}
-
-impl Default for Priority {
-    fn default() -> Self {
-        Priority::Normal
-    }
 }
 
 /// Status of a queued operation
@@ -64,7 +57,7 @@ impl QueueItem {
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
-        
+
         Self {
             id: request.id,
             uuid: Uuid::new_v4().to_string(),
@@ -99,7 +92,7 @@ impl Default for QueueConfig {
             .unwrap_or_else(|| PathBuf::from("."))
             .join("triplewrapper")
             .join("queue.json");
-        
+
         Self {
             max_concurrent_operations: 2,
             default_priority: Priority::Normal,
@@ -118,7 +111,6 @@ pub struct OperationQueue {
     running: Arc<RwLock<Vec<OperationId>>>,
     paused: Arc<Mutex<bool>>,
     notify: Arc<Notify>,
-    persistence_notify: Arc<Notify>,
     shutdown: Arc<Mutex<bool>>,
     worker_handles: Arc<Mutex<Vec<tokio::task::JoinHandle<()>>>>,
 }
@@ -136,7 +128,6 @@ impl OperationQueue {
             running: Arc::new(RwLock::new(Vec::new())),
             paused: Arc::new(Mutex::new(false)),
             notify: Arc::new(Notify::new()),
-            persistence_notify: Arc::new(Notify::new()),
             shutdown: Arc::new(Mutex::new(false)),
             worker_handles: Arc::new(Mutex::new(Vec::new())),
         };
@@ -160,7 +151,7 @@ impl OperationQueue {
         }
 
         let items: Vec<QueueItem> = serde_json::from_slice(&data)?;
-        
+
         // Only restore pending/paused items; running items become pending
         let mut queue_items = VecDeque::new();
         for mut item in items {
@@ -179,14 +170,18 @@ impl OperationQueue {
 
         // Re-sort by priority
         let mut vec: Vec<_> = queue_items.into();
-        vec.sort_by(|a, b| b.priority.cmp(&a.priority));
+        vec.sort_by_key(|a| std::cmp::Reverse(a.priority));
         *self.items.write().await = vec.into();
 
         Ok(())
     }
 
     /// Add an operation to the queue
-    pub async fn enqueue(&self, request: OperationRequest, priority: Option<Priority>) -> Result<OperationId> {
+    pub async fn enqueue(
+        &self,
+        request: OperationRequest,
+        priority: Option<Priority>,
+    ) -> Result<OperationId> {
         let priority = priority.unwrap_or(self.config.default_priority);
         let mut item = QueueItem::new(request, priority);
 
@@ -200,43 +195,52 @@ impl OperationQueue {
             let id = item.id;
 
             // Insert based on priority (highest first)
-            let insert_pos = items.iter().position(|i| i.priority < priority).unwrap_or(items.len());
+            let insert_pos = items
+                .iter()
+                .position(|i| i.priority < priority)
+                .unwrap_or(items.len());
             items.insert(insert_pos, item);
 
             self.notify.notify_one();
             drop(items);
             self.persist_async().await?;
-            return Ok(id);
+            Ok(id)
         }
     }
 
     /// Add multiple operations at once (batch)
-    pub async fn enqueue_batch(&self, requests: Vec<(OperationRequest, Option<Priority>)>) -> Result<Vec<OperationId>> {
+    pub async fn enqueue_batch(
+        &self,
+        requests: Vec<(OperationRequest, Option<Priority>)>,
+    ) -> Result<Vec<OperationId>> {
         let mut ids = Vec::with_capacity(requests.len());
-        
+
         for (request, priority) in requests {
             ids.push(self.enqueue(request, priority).await?);
         }
-        
+
         self.persist_async().await?;
         Ok(ids)
     }
 
     /// Get next pending item (highest priority)
-    async fn dequeue(&self) -> Option<QueueItem> {
+    pub async fn dequeue(&self) -> Option<QueueItem> {
         let mut items = self.items.write().await;
-        
+
         // Find first pending item
-        if let Some(pos) = items.iter().position(|i| i.status == QueueItemStatus::Pending) {
+        if let Some(pos) = items
+            .iter()
+            .position(|i| i.status == QueueItemStatus::Pending)
+        {
             let mut item = items.remove(pos).unwrap();
             item.status = QueueItemStatus::Running;
-            
+
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
             item.started_at = Some(now);
-            
+
             Some(item)
         } else {
             None
@@ -246,17 +250,20 @@ impl OperationQueue {
     /// Update item status
     pub async fn update_status(&self, id: OperationId, status: QueueItemStatus) -> Result<()> {
         let mut items = self.items.write().await;
-        
+
         if let Some(item) = items.iter_mut().find(|i| i.id == id) {
             item.status = status;
-            
-            if status == QueueItemStatus::Completed || status == QueueItemStatus::Failed || status == QueueItemStatus::Cancelled {
+
+            if status == QueueItemStatus::Completed
+                || status == QueueItemStatus::Failed
+                || status == QueueItemStatus::Cancelled
+            {
                 let now = SystemTime::now()
                     .duration_since(UNIX_EPOCH)
                     .unwrap_or_default()
                     .as_secs();
                 item.completed_at = Some(now);
-                
+
                 // Remove from running
                 let mut running = self.running.write().await;
                 running.retain(|&rid| rid != id);
@@ -266,24 +273,34 @@ impl OperationQueue {
                     running.push(id);
                 }
             }
-            
+
             drop(items);
             self.persist_async().await?;
             Ok(())
         } else {
-            Err(TripleWrapperError::Internal(format!("Queue item not found: {}", id.0)))
+            Err(TripleWrapperError::Internal(format!(
+                "Queue item not found: {}",
+                id.0
+            )))
         }
     }
 
     /// Update item progress
-    pub async fn update_progress(&self, id: OperationId, progress: ProgressTelemetry) -> Result<()> {
+    pub async fn update_progress(
+        &self,
+        id: OperationId,
+        progress: ProgressTelemetry,
+    ) -> Result<()> {
         let mut items = self.items.write().await;
-        
+
         if let Some(item) = items.iter_mut().find(|i| i.id == id) {
             item.progress = Some(progress);
             Ok(())
         } else {
-            Err(TripleWrapperError::Internal(format!("Queue item not found: {}", id.0)))
+            Err(TripleWrapperError::Internal(format!(
+                "Queue item not found: {}",
+                id.0
+            )))
         }
     }
 
@@ -311,7 +328,7 @@ impl OperationQueue {
     /// Resume a specific item
     pub async fn resume_item(&self, id: OperationId) -> Result<()> {
         let mut items = self.items.write().await;
-        
+
         if let Some(item) = items.iter_mut().find(|i| i.id == id) {
             if item.status == QueueItemStatus::Paused {
                 item.status = QueueItemStatus::Pending;
@@ -323,7 +340,10 @@ impl OperationQueue {
                 Err(TripleWrapperError::Internal("Item is not paused".into()))
             }
         } else {
-            Err(TripleWrapperError::Internal(format!("Queue item not found: {}", id.0)))
+            Err(TripleWrapperError::Internal(format!(
+                "Queue item not found: {}",
+                id.0
+            )))
         }
     }
 
@@ -335,7 +355,7 @@ impl OperationQueue {
     /// Retry a failed item
     pub async fn retry_item(&self, id: OperationId) -> Result<()> {
         let mut items = self.items.write().await;
-        
+
         if let Some(item) = items.iter_mut().find(|i| i.id == id) {
             if item.status == QueueItemStatus::Failed {
                 if item.retry_count < item.max_retries {
@@ -352,10 +372,15 @@ impl OperationQueue {
                     Err(TripleWrapperError::Internal("Max retries exceeded".into()))
                 }
             } else {
-                Err(TripleWrapperError::Internal("Item is not in failed state".into()))
+                Err(TripleWrapperError::Internal(
+                    "Item is not in failed state".into(),
+                ))
             }
         } else {
-            Err(TripleWrapperError::Internal(format!("Queue item not found: {}", id.0)))
+            Err(TripleWrapperError::Internal(format!(
+                "Queue item not found: {}",
+                id.0
+            )))
         }
     }
 
@@ -369,19 +394,21 @@ impl OperationQueue {
 
         let mut items = self.items.write().await;
         let initial_len = items.len();
-        
+
         items.retain(|item| {
-            matches!(item.status, QueueItemStatus::Pending | QueueItemStatus::Running | QueueItemStatus::Paused)
-                || item.completed_at.unwrap_or(0) > cutoff
+            matches!(
+                item.status,
+                QueueItemStatus::Pending | QueueItemStatus::Running | QueueItemStatus::Paused
+            ) || item.completed_at.unwrap_or(0) > cutoff
         });
-        
+
         let removed = initial_len - items.len();
         drop(items);
-        
+
         if removed > 0 {
             self.persist_async().await?;
         }
-        
+
         Ok(removed)
     }
 
@@ -392,7 +419,10 @@ impl OperationQueue {
 
     /// Get items by status
     pub async fn get_by_status(&self, status: QueueItemStatus) -> Vec<QueueItem> {
-        self.items.read().await.iter()
+        self.items
+            .read()
+            .await
+            .iter()
             .filter(|i| i.status == status)
             .cloned()
             .collect()
@@ -405,7 +435,10 @@ impl OperationQueue {
 
     /// Get pending count
     pub async fn pending_count(&self) -> usize {
-        self.items.read().await.iter()
+        self.items
+            .read()
+            .await
+            .iter()
             .filter(|i| i.status == QueueItemStatus::Pending)
             .count()
     }
@@ -429,21 +462,21 @@ impl OperationQueue {
     }
 
     /// Start worker tasks
-    pub async fn start_workers<F, Fut>(&self, processor: F) 
+    pub async fn start_workers<F, Fut>(&self, processor: F)
     where
         F: Fn(QueueItem) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = Result<()>> + Send + 'static,
     {
         let processor = Arc::new(processor);
-        
+
         for worker_id in 0..self.config.max_concurrent_operations {
             let queue = self.clone_for_worker();
             let processor = processor.clone();
-            
+
             let handle = tokio::spawn(async move {
                 queue.worker_loop(worker_id, processor).await;
             });
-            
+
             self.worker_handles.lock().unwrap().push(handle);
         }
     }
@@ -455,7 +488,6 @@ impl OperationQueue {
             running: self.running.clone(),
             paused: self.paused.clone(),
             notify: self.notify.clone(),
-            persistence_notify: self.persistence_notify.clone(),
             shutdown: self.shutdown.clone(),
         }
     }
@@ -464,12 +496,17 @@ impl OperationQueue {
     pub async fn shutdown(&self) {
         *self.shutdown.lock().unwrap() = true;
         self.notify.notify_waiters();
-        
-        let handles = self.worker_handles.lock().unwrap().drain(..).collect::<Vec<_>>();
+
+        let handles = self
+            .worker_handles
+            .lock()
+            .unwrap()
+            .drain(..)
+            .collect::<Vec<_>>();
         for handle in handles {
             let _ = handle.await;
         }
-        
+
         // Final persist
         let _ = self.persist_async().await;
     }
@@ -483,12 +520,11 @@ struct WorkerQueueRef {
     running: Arc<RwLock<Vec<OperationId>>>,
     paused: Arc<Mutex<bool>>,
     notify: Arc<Notify>,
-    persistence_notify: Arc<Notify>,
     shutdown: Arc<Mutex<bool>>,
 }
 
 impl WorkerQueueRef {
-    async fn worker_loop<F, Fut>(&self, worker_id: usize, processor: Arc<F>)
+    async fn worker_loop<F, Fut>(&self, _worker_id: usize, processor: Arc<F>)
     where
         F: Fn(QueueItem) -> Fut + Send + Sync + 'static,
         Fut: std::future::Future<Output = Result<()>> + Send + 'static,
@@ -524,29 +560,36 @@ impl WorkerQueueRef {
 
             // Process item
             let result = processor(item.clone()).await;
-            
-            // Update status based on result
-            let status = match result {
-                Ok(_) => QueueItemStatus::Completed,
+
+            // Update status based on result (auto-retry while attempts remain)
+            let (status, terminal) = match result {
+                Ok(_) => (QueueItemStatus::Completed, true),
                 Err(e) => {
                     item.error_message = Some(e.to_string());
                     if item.retry_count < item.max_retries {
-                        QueueItemStatus::Failed // Will be retried
+                        item.retry_count += 1;
+                        (QueueItemStatus::Pending, false)
                     } else {
-                        QueueItemStatus::Failed
+                        (QueueItemStatus::Failed, true)
                     }
                 }
             };
 
-            // Update item status
+            // Write back status, error and retry count
             let mut items = self.items.write().await;
             if let Some(queued_item) = items.iter_mut().find(|i| i.id == item.id) {
                 queued_item.status = status;
-                let now = SystemTime::now()
-                    .duration_since(UNIX_EPOCH)
-                    .unwrap_or_default()
-                    .as_secs();
-                queued_item.completed_at = Some(now);
+                queued_item.error_message = item.error_message.clone();
+                queued_item.retry_count = item.retry_count;
+                if terminal {
+                    let now = SystemTime::now()
+                        .duration_since(UNIX_EPOCH)
+                        .unwrap_or_default()
+                        .as_secs();
+                    queued_item.completed_at = Some(now);
+                } else {
+                    queued_item.started_at = None;
+                }
             }
             drop(items);
 
@@ -563,17 +606,20 @@ impl WorkerQueueRef {
 
     async fn dequeue(&self) -> Option<QueueItem> {
         let mut items = self.items.write().await;
-        
-        if let Some(pos) = items.iter().position(|i| i.status == QueueItemStatus::Pending) {
+
+        if let Some(pos) = items
+            .iter()
+            .position(|i| i.status == QueueItemStatus::Pending)
+        {
             let mut item = items.remove(pos).unwrap();
             item.status = QueueItemStatus::Running;
-            
+
             let now = SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap_or_default()
                 .as_secs();
             item.started_at = Some(now);
-            
+
             Some(item)
         } else {
             None
@@ -596,7 +642,6 @@ impl Clone for OperationQueue {
             running: self.running.clone(),
             paused: self.paused.clone(),
             notify: self.notify.clone(),
-            persistence_notify: self.persistence_notify.clone(),
             shutdown: self.shutdown.clone(),
             worker_handles: self.worker_handles.clone(),
         }
@@ -606,9 +651,9 @@ impl Clone for OperationQueue {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use tempfile::tempdir;
-    use crate::types::{OperationType, OperationRequest};
+    use crate::types::{OperationRequest, OperationType};
     use std::path::PathBuf;
+    use tempfile::tempdir;
 
     #[tokio::test]
     async fn test_enqueue_dequeue() {
@@ -618,9 +663,9 @@ mod tests {
             max_concurrent_operations: 1,
             ..Default::default()
         };
-        
+
         let queue = OperationQueue::new(config).unwrap();
-        
+
         let request = OperationRequest {
             id: OperationId::new(),
             op_type: OperationType::Extract,
@@ -633,10 +678,10 @@ mod tests {
             verify_after: true,
             dry_run: false,
         };
-        
+
         let id = queue.enqueue(request, Some(Priority::High)).await.unwrap();
         assert_eq!(queue.pending_count().await, 1);
-        
+
         // Should be able to dequeue
         let item = queue.dequeue().await.unwrap();
         assert_eq!(item.id, id);
@@ -651,9 +696,9 @@ mod tests {
             max_concurrent_operations: 1,
             ..Default::default()
         };
-        
+
         let queue = OperationQueue::new(config).unwrap();
-        
+
         // Add low then high priority
         for _ in 0..2 {
             let request = OperationRequest {
@@ -670,7 +715,7 @@ mod tests {
             };
             queue.enqueue(request, Some(Priority::Low)).await.unwrap();
         }
-        
+
         let request = OperationRequest {
             id: OperationId::new(),
             op_type: OperationType::Extract,
@@ -683,8 +728,11 @@ mod tests {
             verify_after: true,
             dry_run: false,
         };
-        queue.enqueue(request, Some(Priority::Critical)).await.unwrap();
-        
+        queue
+            .enqueue(request, Some(Priority::Critical))
+            .await
+            .unwrap();
+
         // High priority should be dequeued first
         let item = queue.dequeue().await.unwrap();
         assert_eq!(item.priority, Priority::Critical);
@@ -697,9 +745,9 @@ mod tests {
             persistence_path: dir.path().join("queue.json"),
             ..Default::default()
         };
-        
+
         let queue = OperationQueue::new(config).unwrap();
-        
+
         assert!(!queue.is_paused());
         queue.pause();
         assert!(queue.is_paused());
@@ -714,25 +762,27 @@ mod tests {
             persistence_path: dir.path().join("queue.json"),
             ..Default::default()
         };
-        
+
         let queue = OperationQueue::new(config).unwrap();
-        
-        let requests: Vec<_> = (0..5).map(|_| {
-            let request = OperationRequest {
-                id: OperationId::new(),
-                op_type: OperationType::Extract,
-                archive_path: PathBuf::from("/test.zip"),
-                output_path: Some(PathBuf::from("/out")),
-                files_to_process: vec![],
-                compression_level: 5,
-                compression_format: None,
-                workspace_override: None,
-                verify_after: true,
-                dry_run: false,
-            };
-            (request, Some(Priority::Normal))
-        }).collect();
-        
+
+        let requests: Vec<_> = (0..5)
+            .map(|_| {
+                let request = OperationRequest {
+                    id: OperationId::new(),
+                    op_type: OperationType::Extract,
+                    archive_path: PathBuf::from("/test.zip"),
+                    output_path: Some(PathBuf::from("/out")),
+                    files_to_process: vec![],
+                    compression_level: 5,
+                    compression_format: None,
+                    workspace_override: None,
+                    verify_after: true,
+                    dry_run: false,
+                };
+                (request, Some(Priority::Normal))
+            })
+            .collect();
+
         let ids = queue.enqueue_batch(requests).await.unwrap();
         assert_eq!(ids.len(), 5);
         assert_eq!(queue.pending_count().await, 5);
@@ -745,9 +795,9 @@ mod tests {
             persistence_path: dir.path().join("queue.json"),
             ..Default::default()
         };
-        
+
         let queue = OperationQueue::new(config).unwrap();
-        
+
         let request = OperationRequest {
             id: OperationId::new(),
             op_type: OperationType::Extract,
@@ -760,14 +810,17 @@ mod tests {
             verify_after: true,
             dry_run: false,
         };
-        
-        let id = queue.enqueue(request, Some(Priority::Normal)).await.unwrap();
-        
+
+        let id = queue
+            .enqueue(request, Some(Priority::Normal))
+            .await
+            .unwrap();
+
         // Pause item
         queue.pause_item(id).await.unwrap();
         let items = queue.get_by_status(QueueItemStatus::Paused).await;
         assert_eq!(items.len(), 1);
-        
+
         // Resume item
         queue.resume_item(id).await.unwrap();
         let items = queue.get_by_status(QueueItemStatus::Pending).await;

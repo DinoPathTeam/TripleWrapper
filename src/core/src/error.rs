@@ -1,7 +1,7 @@
 //! Error types for TripleWrapper
 
-use thiserror::Error;
 use std::path::PathBuf;
+use thiserror::Error;
 
 #[derive(Error, Debug)]
 pub enum TripleWrapperError {
@@ -12,7 +12,11 @@ pub enum TripleWrapperError {
     ArchiveNotFound(PathBuf),
 
     #[error("Insufficient space: need {needed} bytes, have {available} bytes on {device}")]
-    InsufficientSpace { needed: u64, available: u64, device: String },
+    InsufficientSpace {
+        needed: u64,
+        available: u64,
+        device: String,
+    },
 
     #[error("No suitable workspace found: {0}")]
     NoWorkspace(String),

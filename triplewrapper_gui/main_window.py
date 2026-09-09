@@ -174,8 +174,8 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
     def _do_refresh_queue(self) -> None:
         from gi.repository import GLib
 
+        from .core.protocol import queue_items_from_raw
         from .widgets.queue_panel import Priority, QueueItem, QueueItemStatus
-        from .core.bridge import queue_items_from_raw
 
         try:
             raw = self._bridge.queue_list()
@@ -197,7 +197,7 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
                     error_message=entry["error_message"],
                 ))
             GLib.idle_add(self._analysis.set_queue_items, items)
-        except Exception:
+        except Exception:  # noqa: BLE001 - best-effort background refresh
             return
 
     def on_progress_tick(self, bridge, tick) -> None:

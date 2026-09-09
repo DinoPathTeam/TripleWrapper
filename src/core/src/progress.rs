@@ -1,13 +1,10 @@
 //! Progress monitoring and telemetry
 
-use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{broadcast, mpsc, Mutex};
-use tracing::{debug, trace};
 
-use crate::types::{OperationId, OperationStatus, ProgressTelemetry, get_cpu_count};
-use crate::Result;
+use crate::types::{get_cpu_count, OperationId, OperationStatus, ProgressTelemetry};
 
 /// Progress monitor for tracking operation metrics
 pub struct ProgressMonitor {
@@ -25,7 +22,10 @@ pub struct ProgressMonitor {
 }
 
 impl ProgressMonitor {
-    pub fn new(operation_id: OperationId, files_total: u32) -> (Self, broadcast::Receiver<ProgressTelemetry>) {
+    pub fn new(
+        operation_id: OperationId,
+        files_total: u32,
+    ) -> (Self, broadcast::Receiver<ProgressTelemetry>) {
         let (telemetry_tx, telemetry_rx) = broadcast::channel(100);
         let (internal_tx, mut internal_rx) = mpsc::unbounded_channel();
 
@@ -72,7 +72,7 @@ impl ProgressMonitor {
                 // Emit telemetry at max 10 Hz
                 if last_emit.elapsed() >= Duration::from_millis(100) {
                     let elapsed = start_time.elapsed().as_secs_f64();
-                    
+
                     let current_written = *bytes_written_clone.lock().await;
                     let current_read = *bytes_read_clone.lock().await;
                     let current_compressed = *bytes_compressed_clone.lock().await;
@@ -82,21 +82,36 @@ impl ProgressMonitor {
 
                     // Calculate speeds (MB/s)
                     let write_speed = if elapsed > 0.0 {
-                        (current_written.saturating_sub(last_bytes_written)) as f64 / elapsed / 1_048_576.0
-                    } else { 0.0 };
+                        (current_written.saturating_sub(last_bytes_written)) as f64
+                            / elapsed
+                            / 1_048_576.0
+                    } else {
+                        0.0
+                    };
                     let read_speed = if elapsed > 0.0 {
-                        (current_read.saturating_sub(last_bytes_read)) as f64 / elapsed / 1_048_576.0
-                    } else { 0.0 };
+                        (current_read.saturating_sub(last_bytes_read)) as f64
+                            / elapsed
+                            / 1_048_576.0
+                    } else {
+                        0.0
+                    };
                     let compress_speed = if elapsed > 0.0 {
-                        (current_compressed.saturating_sub(last_bytes_compressed)) as f64 / elapsed / 1_048_576.0
-                    } else { 0.0 };
+                        (current_compressed.saturating_sub(last_bytes_compressed)) as f64
+                            / elapsed
+                            / 1_048_576.0
+                    } else {
+                        0.0
+                    };
 
                     // Estimate ETA
                     let eta = if write_speed > 0.01 && files_total > 0 {
-                        let total_estimate = current_written * files_total as u64 / (processed_files.max(1) as u64);
+                        let total_estimate =
+                            current_written * files_total as u64 / (processed_files.max(1) as u64);
                         let remaining = total_estimate.saturating_sub(current_written);
                         Some((remaining as f64 / (write_speed * 1_048_576.0)) as u64)
-                    } else { None };
+                    } else {
+                        None
+                    };
 
                     let telemetry = ProgressTelemetry {
                         operation_id,
@@ -191,19 +206,10 @@ impl ProgressMonitor {
 }
 
 /// Internal progress update (high frequency)
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct InternalProgressUpdate {
     pub bytes_processed_override: Option<u64>,
     pub file_name: Option<String>,
-}
-
-impl Default for InternalProgressUpdate {
-    fn default() -> Self {
-        Self {
-            bytes_processed_override: None,
-            file_name: None,
-        }
-    }
 }
 
 /// System resource monitor (CPU, Memory, I/O)
@@ -230,7 +236,7 @@ impl SystemMonitor {
     pub fn read_io_stats(&mut self) -> Option<(u64, u64)> {
         let path = format!("/proc/{}/io", self.pid);
         let content = std::fs::read_to_string(&path).ok()?;
-        
+
         let mut read_bytes = 0u64;
         let mut write_bytes = 0u64;
 
@@ -252,7 +258,7 @@ impl SystemMonitor {
     pub fn read_cpu_percent(&mut self) -> Option<f32> {
         let path = format!("/proc/{}/stat", self.pid);
         let content = std::fs::read_to_string(&path).ok()?;
-        
+
         // Parse utime, stime, starttime
         let parts: Vec<&str> = content.split_whitespace().collect();
         if parts.len() < 22 {
@@ -265,7 +271,7 @@ impl SystemMonitor {
 
         let now = Instant::now();
         let elapsed = now.duration_since(self.last_check).as_secs_f64();
-        
+
         if elapsed < 0.1 {
             return None; // Too soon
         }
@@ -284,13 +290,14 @@ impl SystemMonitor {
         if let Some((read, write)) = self.read_io_stats() {
             let now = Instant::now();
             let elapsed = now.duration_since(self.last_check).as_secs_f64();
-            
+
             if elapsed < 0.1 {
                 return None;
             }
 
             let read_rate = (read.saturating_sub(self.last_io_read)) as f64 / elapsed / 1_048_576.0;
-            let write_rate = (write.saturating_sub(self.last_io_write)) as f64 / elapsed / 1_048_576.0;
+            let write_rate =
+                (write.saturating_sub(self.last_io_write)) as f64 / elapsed / 1_048_576.0;
 
             self.last_io_read = read;
             self.last_io_write = write;
@@ -326,17 +333,20 @@ impl ProgressAggregator {
     }
 
     pub async fn remove(&self, operation_id: OperationId) {
-        self.monitors.lock().await.retain(|m| m.operation_id != operation_id);
+        self.monitors
+            .lock()
+            .await
+            .retain(|m| m.operation_id != operation_id);
     }
 
     pub async fn get_all_snapshots(&self) -> Vec<ProgressTelemetry> {
         let monitors = self.monitors.lock().await;
         let mut snapshots = Vec::new();
-        
+
         for monitor in monitors.iter() {
             snapshots.push(monitor.snapshot().await);
         }
-        
+
         snapshots
     }
 }
@@ -355,14 +365,14 @@ mod tests {
     #[tokio::test]
     async fn test_progress_monitor() {
         let (monitor, mut rx) = ProgressMonitor::new(OperationId::new(), 5);
-        
+
         monitor.set_status(OperationStatus::Running).await;
         monitor.set_current_file("test.txt".to_string()).await;
         monitor.add_bytes_written(1024 * 1024).await; // 1 MB
-        
+
         // Should receive telemetry
         tokio::time::sleep(Duration::from_millis(200)).await;
-        
+
         if let Ok(telemetry) = rx.try_recv() {
             assert_eq!(telemetry.bytes_processed, 1024 * 1024);
             assert_eq!(telemetry.current_file, "test.txt");

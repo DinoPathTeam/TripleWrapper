@@ -3,12 +3,13 @@ Queue panel widget for batch operations visualization
 """
 
 import gi
+
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, GLib, GObject
-from typing import Optional, List
 from dataclasses import dataclass
 from enum import Enum
+
+from gi.repository import Adw, GObject, Gtk
 
 
 class QueueItemStatus(Enum):
@@ -33,12 +34,12 @@ class QueueItem:
     uuid: str
     operation: str
     archive: str
-    output: Optional[str]
+    output: str | None
     priority: Priority
     status: QueueItemStatus
     progress: float = 0.0
     current_file: str = ""
-    error_message: Optional[str] = None
+    error_message: str | None = None
     retry_count: int = 0
     max_retries: int = 3
 
@@ -49,7 +50,7 @@ class QueuePanelWidget(Adw.Bin):
     """
     
     # Signal emitted when user requests an action
-    __gsignals__ = {
+    __gsignals__ = {  # noqa: RUF012 - GObject signal map must be a dict
         'item-action': (GObject.SignalFlags.RUN_FIRST, None,
                         (str, str)),  # action, item_id
     }
@@ -57,8 +58,8 @@ class QueuePanelWidget(Adw.Bin):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
         
-        self._items: List[QueueItem] = []
-        self._selected_id: Optional[int] = None
+        self._items: list[QueueItem] = []
+        self._selected_id: int | None = None
         
         self._build_ui()
     
@@ -160,7 +161,7 @@ class QueuePanelWidget(Adw.Bin):
         self._cancel_btn.connect("clicked", self._on_cancel_item)
         self._item_actions_box.append(self._cancel_btn)
     
-    def set_items(self, items: List[QueueItem]):
+    def set_items(self, items: list[QueueItem]):
         """Update the queue items"""
         self._items = items
         self._refresh_list()
@@ -258,7 +259,7 @@ class QueuePanelWidget(Adw.Bin):
         row.item_id = item.id
         return row
     
-    def _on_row_selected(self, list_box: Gtk.ListBox, row: Optional[Adw.ActionRow]):
+    def _on_row_selected(self, list_box: Gtk.ListBox, row: Adw.ActionRow | None):
         if row and hasattr(row, 'item_id'):
             self._selected_id = row.item_id
             item = next((i for i in self._items if i.id == self._selected_id), None)
@@ -313,7 +314,7 @@ class QueuePanelWidget(Adw.Bin):
 
 
 # Convenience function for creating queue item from CLI output
-def parse_queue_list_output(output: str) -> List[QueueItem]:
+def parse_queue_list_output(output: str) -> list[QueueItem]:
     """Parse queue list output from CLI"""
     items = []
     lines = output.strip().split('\n')

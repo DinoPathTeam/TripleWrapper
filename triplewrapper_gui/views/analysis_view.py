@@ -6,7 +6,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Gdk, Gtk, GObject
+from gi.repository import Gdk, GObject, Gtk
 
 from ..core.models import AnalysisReport
 from ..widgets.queue_panel import QueueItem, QueuePanelWidget
@@ -17,7 +17,7 @@ class AnalysisView(Gtk.Box):
     """Shows analysis results and lets user pick workspace."""
 
     __gtype_name__ = "TripleWrapperAnalysisView"
-    __gsignals__ = {
+    __gsignals__ = {  # noqa: RUF012 - GObject signal map must be a dict
         "start-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "enqueue-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "back-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),

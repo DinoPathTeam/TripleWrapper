@@ -1,14 +1,13 @@
 //! IPC communication via DBus
 
+use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::Mutex;
-use zbus::{Connection, fdo};
-use serde::{Deserialize, Serialize};
-use zvariant_derive::Type;
+use zbus::{fdo, Connection};
 
 use crate::types::*;
-use crate::{Result, TripleWrapperError};
+use crate::Result;
 
 /// DBus service name
 pub const SERVICE_NAME: &str = "com.triplewrapper.Core";
@@ -18,14 +17,14 @@ pub const OBJECT_PATH: &str = "/com/triplewrapper/Core";
 /// DBus-friendly storage verdict (simplified for DBus transport)
 #[derive(Debug, Clone, Serialize, Deserialize, zvariant_derive::Type)]
 pub struct DBusStorageVerdict {
-    pub verdict: String,  // "internal_ok", "external_required", "critical_error"
+    pub verdict: String, // "internal_ok", "external_required", "critical_error"
     pub source_disk: DiskInfo,
-    pub workspace_disk: DiskInfo,  // empty if not applicable
+    pub workspace_disk: DiskInfo, // empty if not applicable
     pub has_workspace_disk: bool,
     pub estimate: CompressionEstimate,
     pub has_estimate: bool,
-    pub workdir: String,  // empty if not applicable
-    pub sevenzip_workdir_param: String,  // empty if not applicable
+    pub workdir: String,                // empty if not applicable
+    pub sevenzip_workdir_param: String, // empty if not applicable
     pub message: String,
     pub requires_confirmation: bool,
 }
@@ -33,7 +32,11 @@ pub struct DBusStorageVerdict {
 impl From<StorageVerdict> for DBusStorageVerdict {
     fn from(v: StorageVerdict) -> Self {
         match v {
-            StorageVerdict::InternalOk { source_disk, estimate, message } => Self {
+            StorageVerdict::InternalOk {
+                source_disk,
+                estimate,
+                message,
+            } => Self {
                 verdict: "internal_ok".to_string(),
                 source_disk,
                 workspace_disk: DiskInfo::default(),
@@ -45,7 +48,15 @@ impl From<StorageVerdict> for DBusStorageVerdict {
                 message,
                 requires_confirmation: false,
             },
-            StorageVerdict::ExternalRequired { source_disk, workspace_disk, estimate, workdir, sevenzip_workdir_param, message, requires_confirmation } => Self {
+            StorageVerdict::ExternalRequired {
+                source_disk,
+                workspace_disk,
+                estimate,
+                workdir,
+                sevenzip_workdir_param,
+                message,
+                requires_confirmation,
+            } => Self {
                 verdict: "external_required".to_string(),
                 source_disk,
                 workspace_disk,
@@ -57,7 +68,12 @@ impl From<StorageVerdict> for DBusStorageVerdict {
                 message,
                 requires_confirmation,
             },
-            StorageVerdict::CriticalError { source_disk, estimate, best_available_gb, message } => Self {
+            StorageVerdict::CriticalError {
+                source_disk,
+                estimate,
+                best_available_gb,
+                message,
+            } => Self {
                 verdict: "critical_error".to_string(),
                 source_disk,
                 workspace_disk: DiskInfo::default(),
@@ -76,17 +92,14 @@ impl From<StorageVerdict> for DBusStorageVerdict {
 /// Internal service logic (not exposed via DBus)
 pub struct CoreServiceInternal {
     engine: Arc<Mutex<crate::engine::StorageEngine>>,
-    operator: Arc<Mutex<crate::archive::ArchiveOperator>>,
 }
 
 impl CoreServiceInternal {
     pub fn new() -> Result<Self> {
         let engine = crate::engine::StorageEngine::new(Default::default());
-        let operator = crate::archive::ArchiveOperator::new()?;
 
         Ok(Self {
             engine: Arc::new(Mutex::new(engine)),
-            operator: Arc::new(Mutex::new(operator)),
         })
     }
 
@@ -128,7 +141,9 @@ impl CoreService {
 impl CoreService {
     /// GetDisks returns list of mounted disks with space info
     async fn get_disks(&self) -> fdo::Result<Vec<DiskInfo>> {
-        self.internal.get_disks().await
+        self.internal
+            .get_disks()
+            .await
             .map_err(|e| fdo::Error::Failed(e.to_string()))
     }
 
@@ -139,7 +154,9 @@ impl CoreService {
         bytes_to_remove: u64,
         bytes_to_add: u64,
     ) -> fdo::Result<DBusStorageVerdict> {
-        self.internal.get_verdict(archive_path, bytes_to_remove, bytes_to_add).await
+        self.internal
+            .get_verdict(archive_path, bytes_to_remove, bytes_to_add)
+            .await
             .map_err(|e| fdo::Error::Failed(e.to_string()))
     }
 
@@ -172,8 +189,9 @@ impl CoreClient {
             SERVICE_NAME,
             OBJECT_PATH,
             "com.triplewrapper.Core",
-        ).await?;
-        
+        )
+        .await?;
+
         let reply = proxy.call_method("GetDisks", &()).await?;
         reply.body().deserialize()
     }
@@ -189,9 +207,12 @@ impl CoreClient {
             SERVICE_NAME,
             OBJECT_PATH,
             "com.triplewrapper.Core",
-        ).await?;
-        
-        let reply = proxy.call_method("GetVerdict", &(archive_path, bytes_to_remove, bytes_to_add)).await?;
+        )
+        .await?;
+
+        let reply = proxy
+            .call_method("GetVerdict", &(archive_path, bytes_to_remove, bytes_to_add))
+            .await?;
         reply.body().deserialize()
     }
 
@@ -201,8 +222,9 @@ impl CoreClient {
             SERVICE_NAME,
             OBJECT_PATH,
             "com.triplewrapper.Core",
-        ).await?;
-        
+        )
+        .await?;
+
         let reply = proxy.call_method("Ping", &()).await?;
         reply.body().deserialize()
     }
@@ -211,20 +233,20 @@ impl CoreClient {
 /// Run the DBus service (for systemd activation or manual start)
 pub async fn run_service() -> zbus::Result<()> {
     let service = CoreService::new().map_err(|e| fdo::Error::Failed(e.to_string()))?;
-    
+
     let connection = Connection::session().await?;
-    
+
     // Register the service
     connection.request_name(SERVICE_NAME).await?;
-    
+
     // Serve the interface
     let _ = connection.object_server().at(OBJECT_PATH, service).await?;
-    
+
     println!("TripleWrapper core service running on {}", SERVICE_NAME);
-    
+
     // Keep running
     tokio::signal::ctrl_c().await?;
-    
+
     Ok(())
 }
 

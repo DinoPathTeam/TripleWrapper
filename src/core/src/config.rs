@@ -1,15 +1,15 @@
 //! Configuration management
 
-use std::path::{Path, PathBuf};
-use config::{Config, File, Environment};
-use serde::{Deserialize, Serialize};
-use tracing::info;
+use config::{Config, Environment, File};
 use dirs_next::config_dir;
+use std::path::PathBuf;
+use tracing::info;
 
 use crate::types::Config as AppConfig;
 use crate::{Result, TripleWrapperError};
 
 /// Configuration manager
+#[derive(Default)]
 pub struct ConfigManager {
     config: AppConfig,
     config_path: Option<PathBuf>,
@@ -99,15 +99,6 @@ impl ConfigManager {
     }
 }
 
-impl Default for ConfigManager {
-    fn default() -> Self {
-        Self {
-            config: AppConfig::default(),
-            config_path: None,
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -117,7 +108,7 @@ mod tests {
     fn test_default_config() {
         let manager = ConfigManager::default();
         let config = manager.get();
-        
+
         assert_eq!(config.default_compression_level, 5);
         assert_eq!(config.default_compression_ratio, 0.5);
         assert!(config.verify_checksums);
@@ -127,18 +118,18 @@ mod tests {
     fn test_save_load() {
         let dir = tempdir().unwrap();
         let config_path = dir.path().join("test_config.toml");
-        
+
         let mut manager = ConfigManager::default();
         manager.get_mut().default_compression_level = 9;
         manager.config_path = Some(config_path.clone());
-        
+
         manager.save().unwrap();
-        
+
         // Reload
         let mut builder = Config::builder();
         builder = builder.add_source(File::from(config_path));
         let loaded: AppConfig = builder.build().unwrap().try_deserialize().unwrap();
-        
+
         assert_eq!(loaded.default_compression_level, 9);
     }
 }

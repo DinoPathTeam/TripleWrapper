@@ -5,7 +5,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from triplewrapper_gui.core.bridge import (
+from triplewrapper_gui.core.protocol import (
     parse_event_line,
     queue_items_from_raw,
     validate_archive_path,
@@ -28,7 +28,7 @@ def test_parse_tick_event():
 
 def test_parse_error_event():
     line = json.dumps({"kind": "error", "message": "boom"})
-    kind, payload = parse_event_line(line)
+    kind, _payload = parse_event_line(line)
     assert kind == "error"
 
 

@@ -6,14 +6,14 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Gdk, Gio, GObject, Gtk
+from gi.repository import Gdk, Gio, GLib, GObject, Gtk
 
 
 class WelcomeView(Gtk.Box):
     """Landing view: pick an archive and analyze."""
 
     __gtype_name__ = "TripleWrapperWelcomeView"
-    __gsignals__ = {
+    __gsignals__ = {  # noqa: RUF012 - GObject signal map must be a dict
         "file-selected": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
         "analyze-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
     }
@@ -135,8 +135,8 @@ class WelcomeView(Gtk.Box):
     def _on_dialog_done(self, dialog, result) -> None:
         try:
             file = dialog.open_finish(result)
-        except Exception:
-            return
+        except GLib.Error:
+            return  # user cancelled
         if file is None:
             return
         path = file.get_path()

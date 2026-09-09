@@ -6,7 +6,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import GObject, Gtk
+from gi.repository import Gdk, GObject, Gtk
 
 from ..core.models import ProgressTick
 from ..widgets.steam_graph import SteamGraph
@@ -16,7 +16,7 @@ class ProgressView(Gtk.Box):
     """Shows real-time throughput and overall progress."""
 
     __gtype_name__ = "TripleWrapperProgressView"
-    __gsignals__ = {
+    __gsignals__ = {  # noqa: RUF012 - GObject signal map must be a dict
         "done": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "cancel-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
     }

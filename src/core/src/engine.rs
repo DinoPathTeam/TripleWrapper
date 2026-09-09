@@ -4,7 +4,6 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
 use crate::types::*;
-use crate::{Result, TripleWrapperError};
 
 /// Configuration for the storage engine
 #[derive(Debug, Clone)]
@@ -89,17 +88,19 @@ impl StorageEngine {
         // Extract config values first to avoid borrow conflicts
         let safety_margin = self.config.safety_margin_bytes;
         let auto_select = self.config.auto_select_workspace;
-        
+
         // Get owned copy of disks to avoid borrow conflicts
         let disks = self.get_disks_owned();
-        
+
         // Find source disk
-        let source_disk = self.disk_scanner
+        let source_disk = self
+            .disk_scanner
             .find_disk_for_path(archive_path, &disks)
             .cloned()
             .unwrap_or_else(|| {
                 // Fallback: root disk
-                disks.iter()
+                disks
+                    .iter()
                     .find(|d| d.mount_point == Path::new("/"))
                     .cloned()
                     .unwrap_or_else(|| DiskInfo {
@@ -115,7 +116,9 @@ impl StorageEngine {
                     })
             });
 
-        let space_needed = estimate.space_needed_for_rewrite.saturating_add(safety_margin);
+        let space_needed = estimate
+            .space_needed_for_rewrite
+            .saturating_add(safety_margin);
         let free_space = source_disk.free_bytes;
 
         debug!(
@@ -125,7 +128,11 @@ impl StorageEngine {
 
         // Case 1: Enough space on source disk
         if free_space >= space_needed {
-            info!("Internal OK: {} GB free on {}", free_space as f64 / 1e9, source_disk.label);
+            info!(
+                "Internal OK: {} GB free on {}",
+                free_space as f64 / 1e9,
+                source_disk.label
+            );
             return StorageVerdict::InternalOk {
                 source_disk: source_disk.clone(),
                 estimate: estimate.clone(),
@@ -151,17 +158,19 @@ impl StorageEngine {
 
             // Sort: removable first, then most free space
             candidates.sort_by(|a, b| {
-                (!a.is_removable).cmp(&!b.is_removable)
+                (!a.is_removable)
+                    .cmp(&!b.is_removable)
                     .then_with(|| b.free_bytes.cmp(&a.free_bytes))
             });
 
             if let Some(workspace) = candidates.first() {
                 let workdir = workspace.mount_point.join(".triplewrapper_cache");
                 let sevenzip_param = format!("-w{}", workdir.display());
-                
+
                 info!(
                     "External workspace selected: {} ({} GB free)",
-                    workspace.label, workspace.free_gb()
+                    workspace.label,
+                    workspace.free_gb()
                 );
 
                 return StorageVerdict::ExternalRequired {
@@ -186,14 +195,12 @@ impl StorageEngine {
         }
 
         // Case 3: No space anywhere
-        let best_free = disks.iter()
-            .map(|d| d.free_bytes)
-            .max()
-            .unwrap_or(0);
+        let best_free = disks.iter().map(|d| d.free_bytes).max().unwrap_or(0);
 
         warn!(
             "Critical: No space anywhere. Best: {} GB, Needed: {} GB",
-            best_free as f64 / 1e9, space_needed as f64 / 1e9
+            best_free as f64 / 1e9,
+            space_needed as f64 / 1e9
         );
 
         StorageVerdict::CriticalError {
@@ -220,7 +227,9 @@ impl StorageEngine {
         bytes_to_remove: u64,
         bytes_to_add: u64,
     ) -> StorageVerdict {
-        let current_size = std::fs::metadata(archive_path).map(|m| m.len()).unwrap_or(0);
+        let current_size = std::fs::metadata(archive_path)
+            .map(|m| m.len())
+            .unwrap_or(0);
         let estimate = self.calculate_estimate(current_size, bytes_to_remove, bytes_to_add, None);
         self.decide_workspace(archive_path, &estimate)
     }
@@ -236,7 +245,7 @@ mod tests {
     fn test_estimate_calculation() {
         let engine = StorageEngine::new(EngineConfig::default());
         let est = engine.calculate_estimate(1000, 200, 500, Some(0.5));
-        
+
         // current - removed + added * ratio = 1000 - 200 + 500*0.5 = 1050
         assert_eq!(est.estimated_final_size, 1050);
         // space needed = current + estimated = 1000 + 1050 = 2050
@@ -257,15 +266,15 @@ mod tests {
             safety_margin_bytes: 0,
             ..Default::default()
         });
-        
+
         // Create temp file
         let dir = tempdir().unwrap();
         let file = dir.path().join("test.zip");
         fs::write(&file, vec![0u8; 1000]).unwrap();
-        
+
         let est = CompressionEstimate::new(1000, 100, 100, 0.5); // needs ~2000
         let verdict = engine.decide_workspace(&file, &est);
-        
+
         match verdict {
             StorageVerdict::InternalOk { .. } => {}
             other => panic!("Expected InternalOk, got {:?}", other),

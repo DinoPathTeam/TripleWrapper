@@ -3,9 +3,9 @@
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Instant;
-use tokio::process::Command;
 use tokio::io::{AsyncBufReadExt, BufReader};
-use tracing::{debug, info, warn, error};
+use tokio::process::Command;
+use tracing::{debug, info};
 
 use crate::types::*;
 use crate::{Result, TripleWrapperError};
@@ -49,13 +49,16 @@ impl ArchiveOperator {
 
     /// List archive contents
     pub async fn list(&self, archive: &Path) -> Result<ArchiveMetadata> {
-        let format = ArchiveFormat::from_extension(&archive.to_path_buf())
+        let format = ArchiveFormat::from_extension(archive)
             .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
 
         let entries = match format {
             ArchiveFormat::SevenZ | ArchiveFormat::Zip => self.list_7z(archive).await?,
-            ArchiveFormat::Tar | ArchiveFormat::TarGz | ArchiveFormat::TarXz 
-                | ArchiveFormat::TarZst | ArchiveFormat::TarBz2 => self.list_tar(archive).await?,
+            ArchiveFormat::Tar
+            | ArchiveFormat::TarGz
+            | ArchiveFormat::TarXz
+            | ArchiveFormat::TarZst
+            | ArchiveFormat::TarBz2 => self.list_tar(archive).await?,
             ArchiveFormat::Pixz => self.list_pixz(archive).await?,
         };
 
@@ -66,7 +69,7 @@ impl ArchiveOperator {
             format,
             size,
             entries,
-            solid: false, // TODO: detect solid archives
+            solid: false,     // TODO: detect solid archives
             encrypted: false, // TODO: detect encryption
             comment: None,
         })
@@ -79,9 +82,11 @@ impl ArchiveOperator {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        let stdout = output.stdout.ok_or_else(|| TripleWrapperError::CompressionFailed("No stdout".into()))?;
+        let stdout = output
+            .stdout
+            .ok_or_else(|| TripleWrapperError::CompressionFailed("No stdout".into()))?;
         let mut reader = BufReader::new(stdout).lines();
-        
+
         let mut entries = Vec::new();
         let mut current_entry: Option<ArchiveEntry> = None;
 
@@ -122,9 +127,10 @@ impl ArchiveOperator {
                     "Modified" => {
                         if let Some(ref mut e) = current_entry {
                             // Parse 7z date format
-                            e.modified = chrono::DateTime::parse_from_str(value.trim(), "%Y-%m-%d %H:%M:%S")
-                                .ok()
-                                .map(|dt| dt.with_timezone(&chrono::Utc));
+                            e.modified =
+                                chrono::DateTime::parse_from_str(value.trim(), "%Y-%m-%d %H:%M:%S")
+                                    .ok()
+                                    .map(|dt| dt.with_timezone(&chrono::Utc));
                         }
                     }
                     "CRC" => {
@@ -151,7 +157,9 @@ impl ArchiveOperator {
             .stderr(Stdio::piped())
             .spawn()?;
 
-        let stdout = output.stdout.ok_or_else(|| TripleWrapperError::CompressionFailed("No stdout".into()))?;
+        let stdout = output
+            .stdout
+            .ok_or_else(|| TripleWrapperError::CompressionFailed("No stdout".into()))?;
         let mut reader = BufReader::new(stdout).lines();
         let mut entries = Vec::new();
 
@@ -162,7 +170,7 @@ impl ArchiveOperator {
                 let size = parts[3].parse().unwrap_or(0);
                 let path = parts[5..].join(" ");
                 let is_dir = parts[0].starts_with('d') || path.ends_with('/');
-                
+
                 entries.push(ArchiveEntry {
                     path,
                     size,
@@ -192,7 +200,7 @@ impl ArchiveOperator {
         workdir: Option<&Path>,
         progress_tx: Option<tokio::sync::mpsc::UnboundedSender<ProgressTelemetry>>,
     ) -> Result<OperationStats> {
-        let format = ArchiveFormat::from_extension(&archive.to_path_buf())
+        let format = ArchiveFormat::from_extension(archive)
             .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
 
         let start = Instant::now();
@@ -224,8 +232,11 @@ impl ArchiveOperator {
                 }
                 cmd
             }
-            ArchiveFormat::Tar | ArchiveFormat::TarGz | ArchiveFormat::TarXz 
-                | ArchiveFormat::TarZst | ArchiveFormat::TarBz2 => {
+            ArchiveFormat::Tar
+            | ArchiveFormat::TarGz
+            | ArchiveFormat::TarXz
+            | ArchiveFormat::TarZst
+            | ArchiveFormat::TarBz2 => {
                 let mut cmd = Command::new(&self.tar_path);
                 cmd.args(["-xf", archive.to_str().unwrap()]);
                 cmd.arg(format!("-C{}", output_dir.display()));
@@ -247,8 +258,7 @@ impl ArchiveOperator {
             }
         };
 
-        cmd.stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         info!("Running: {:?}", cmd);
 
@@ -264,7 +274,7 @@ impl ArchiveOperator {
                 // Parse 7z progress output
                 if let Some(progress) = Self::parse_7z_progress(&line) {
                     bytes_written = progress;
-                    
+
                     if last_update.elapsed().as_millis() >= 100 {
                         if let Some(ref tx) = progress_tx {
                             let _ = tx.send(ProgressTelemetry {
@@ -305,7 +315,8 @@ impl ArchiveOperator {
         }
 
         stats.bytes_written = bytes_written;
-        stats.avg_write_mbps = stats.bytes_written as f64 / stats.duration.as_secs_f64() / 1_048_576.0;
+        stats.avg_write_mbps =
+            stats.bytes_written as f64 / stats.duration.as_secs_f64() / 1_048_576.0;
 
         Ok(stats)
     }
@@ -317,9 +328,9 @@ impl ArchiveOperator {
         files: &[PathBuf],
         compression_level: u8,
         workdir: Option<&Path>,
-        progress_tx: Option<tokio::sync::mpsc::UnboundedSender<ProgressTelemetry>>,
+        _progress_tx: Option<tokio::sync::mpsc::UnboundedSender<ProgressTelemetry>>,
     ) -> Result<OperationStats> {
-        let format = ArchiveFormat::from_extension(&archive.to_path_buf())
+        let format = ArchiveFormat::from_extension(archive)
             .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
 
         let start = Instant::now();
@@ -402,12 +413,13 @@ impl ArchiveOperator {
             }
             ArchiveFormat::Pixz => {
                 // pixz creates .tar.xz, not directly adding to existing
-                return Err(TripleWrapperError::InvalidFormat("Pixz doesn't support incremental add".into()));
+                return Err(TripleWrapperError::InvalidFormat(
+                    "Pixz doesn't support incremental add".into(),
+                ));
             }
         };
 
-        cmd.stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         info!("Running: {:?}", cmd);
 
@@ -446,7 +458,7 @@ impl ArchiveOperator {
         files: &[String],
         workdir: Option<&Path>,
     ) -> Result<OperationStats> {
-        let format = ArchiveFormat::from_extension(&archive.to_path_buf())
+        let format = ArchiveFormat::from_extension(archive)
             .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
 
         let start = Instant::now();
@@ -465,11 +477,14 @@ impl ArchiveOperator {
                 }
                 cmd
             }
-            _ => return Err(TripleWrapperError::InvalidFormat("Delete only supported for 7z/zip".into())),
+            _ => {
+                return Err(TripleWrapperError::InvalidFormat(
+                    "Delete only supported for 7z/zip".into(),
+                ))
+            }
         };
 
-        cmd.stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         let mut child = cmd.spawn()?;
         let status = child.wait().await?;
@@ -492,7 +507,7 @@ impl ArchiveOperator {
 
     /// Test archive integrity
     pub async fn test(&self, archive: &Path) -> Result<bool> {
-        let format = ArchiveFormat::from_extension(&archive.to_path_buf())
+        let format = ArchiveFormat::from_extension(archive)
             .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
 
         let archive_str = archive.to_str().unwrap();
@@ -506,8 +521,7 @@ impl ArchiveOperator {
             cmd
         };
 
-        cmd.stdout(Stdio::null())
-            .stderr(Stdio::null());
+        cmd.stdout(Stdio::null()).stderr(Stdio::null());
 
         let status = cmd.status().await?;
         Ok(status.success())
@@ -518,12 +532,13 @@ impl ArchiveOperator {
         // 7z output examples:
         // "Compressing  file.txt  1234567  45%"
         // "Extracting  file.dat  987654321"
-        
+
         if line.contains("Compressing") || line.contains("Extracting") {
             let parts: Vec<&str> = line.split_whitespace().collect();
             for part in parts {
                 if let Ok(bytes) = part.parse::<u64>() {
-                    if bytes > 1000 { // Heuristic: size in bytes
+                    if bytes > 1000 {
+                        // Heuristic: size in bytes
                         return Some(bytes);
                     }
                 }

@@ -2,7 +2,7 @@
 
 project('triplewrapper-gui', 'python',
   version: '0.1.0',
-  license: 'GPL-3.0-or-later',
+  license: 'MIT',
   default_options: ['warning_level=2', 'werror=false']
 )
 
@@ -27,10 +27,10 @@ metainfo_dir = join_paths(data_dir, 'metainfo')
 schemas_dir = join_paths(get_option('datadir'), 'glib-2.0/schemas')
 
 # Install data files
-install_data('data/icons/triplewrapper.svg', install_dir: icon_dir, rename: 'com.github.triplewrapper.App.svg')
-install_data('data/applications/com.github.triplewrapper.App.desktop', install_dir: desktop_dir)
-install_data('data/metainfo/com.github.triplewrapper.App.metainfo.xml', install_dir: metainfo_dir)
-install_data('data/glib-2.0/schemas/com.github.triplewrapper.App.gschema.xml', install_dir: schemas_dir)
+install_data('triplewrapper_gui/data/icons/triplewrapper.svg', install_dir: icon_dir, rename: 'com.github.triplewrapper.App.svg')
+install_data('triplewrapper_gui/data/applications/com.github.triplewrapper.App.desktop', install_dir: desktop_dir)
+install_data('triplewrapper_gui/data/metainfo/com.github.triplewrapper.App.metainfo.xml', install_dir: metainfo_dir)
+install_data('triplewrapper_gui/data/glib-2.0/schemas/com.github.triplewrapper.App.gschema.xml', install_dir: schemas_dir)
 
 # Python package
 python.install_sources(
@@ -45,9 +45,11 @@ python.install_sources(
    'triplewrapper_gui/widgets/__init__.py',
    'triplewrapper_gui/widgets/steam_graph.py',
    'triplewrapper_gui/widgets/storage_donut.py',
+   'triplewrapper_gui/widgets/queue_panel.py',
    'triplewrapper_gui/core/__init__.py',
    'triplewrapper_gui/core/bridge.py',
-   'triplewrapper_gui/core/models.py'],
+   'triplewrapper_gui/core/models.py',
+   'triplewrapper_gui/core/protocol.py'],
   install_dir: python.get_install_dir() / 'triplewrapper_gui'
 )
 

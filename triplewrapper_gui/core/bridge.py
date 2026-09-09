@@ -2,8 +2,6 @@
 from __future__ import annotations
 
 import json
-import os
-import shutil
 import subprocess
 import threading
 from pathlib import Path
@@ -13,109 +11,16 @@ import gi
 gi.require_version("GLib", "2.0")
 gi.require_version("Gio", "2.0")
 
-from gi.repository import GLib, Gio, GObject
+from gi.repository import Gio, GLib, GObject
 
 from .models import AnalysisReport, ProgressTick
-
-ALLOWED_SUFFIXES = (
-    ".7z", ".zip", ".tar", ".gz", ".xz", ".zst", ".bz2",
-    ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.zst", ".tar.bz2", ".tbz2",
-)
-
-
-def core_binary() -> str | None:
-    """Resolve triplewrapper-core binary path."""
-    env = os.environ.get("TRIPLEWRAPPER_CORE_BIN")
-    if env and Path(env).exists():
-        return env
-    found = shutil.which("triplewrapper-core")
-    if found:
-        return found
-    # Dev fallback: repo release binary relative to this file.
-    here = Path(__file__).resolve()
-    for _ in range(6):
-        here = here.parent
-        cand = here / "src" / "core" / "target" / "release" / "triplewrapper-core"
-        if cand.exists():
-            return str(cand)
-    return None
-
-
-def validate_archive_path(path: str) -> tuple[bool, str]:
-    """Pure validation: exists, readable file, allowed suffix."""
-    if not path:
-        return False, "No hay archivo seleccionado"
-    p = Path(path)
-    if not p.exists():
-        return False, f"El archivo no existe: {path}"
-    if not p.is_file():
-        return False, f"No es un archivo: {path}"
-    try:
-        with p.open("rb"):
-            pass
-    except OSError:
-        return False, f"Sin permiso de lectura: {path}"
-    lower = path.lower()
-    if not any(lower.endswith(s) for s in ALLOWED_SUFFIXES):
-        return False, f"Formato no soportado: {Path(path).suffix or 'desconocido'}"
-    return True, ""
-
-
-def queue_items_from_raw(raw_items: list[dict]) -> list[dict]:
-    """Normalize raw `queue list --json` items for the QueuePanel.
-
-    Returns plain dicts with keys: id, operation, archive, priority,
-    status, progress (0..100), current_file, error_message.
-    Pure function (testable without GTK).
-    """
-    out: list[dict] = []
-    for raw in raw_items:
-        req = raw.get("request", {}) if isinstance(raw, dict) else {}
-        prog = raw.get("progress") or {}
-        total = prog.get("bytes_total", 0) or 0
-        done = prog.get("bytes_processed", 0) or 0
-        pct = (done / total * 100) if total else 0.0
-        out.append({
-            "id": int(raw.get("id", 0)),
-            "operation": str(req.get("op_type", "extract")),
-            "archive": str(req.get("archive_path", "")),
-            "priority": str(raw.get("priority", "normal")),
-            "status": str(raw.get("status", "pending")),
-            "progress": round(min(max(pct, 0.0), 100.0), 1),
-            "current_file": str(prog.get("current_file", "") or ""),
-            "error_message": raw.get("error_message"),
-        })
-    # Pending/running first, then priority order preserved from backend.
-    order = {"running": 0, "pending": 1, "paused": 2}
-    out.sort(key=lambda i: order.get(i["status"], 3))
-    return out
-
-
-def parse_event_line(line: str) -> tuple[str, dict] | None:
-    """Parse one JSON event line. Returns (kind, payload) or None.
-
-    Accepted shapes:
-      {"kind": "analysis", "data": {...}}
-      {"kind": "tick", "data": {...}}
-      {"kind": "error", "message": "..."}
-    """
-    line = line.strip()
-    if not line.startswith("{"):
-        return None
-    try:
-        payload = json.loads(line)
-    except json.JSONDecodeError:
-        return None
-    kind = payload.get("kind")
-    if kind in ("analysis", "tick", "error"):
-        return kind, payload
-    return None
+from .protocol import core_binary, parse_event_line, validate_archive_path
 
 
 class CoreBridge(GObject.Object):
     """Async bridge to triplewrapper-core binary."""
 
-    __gsignals__ = {
+    __gsignals__ = {  # noqa: RUF012 - GObject signal map must be a dict
         "analysis-ready": (GObject.SignalFlags.RUN_FIRST, None, (object,)),
         "analysis-failed": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
         "progress-tick": (GObject.SignalFlags.RUN_FIRST, None, (object,)),
@@ -158,12 +63,12 @@ class CoreBridge(GObject.Object):
         ).start()
 
     def cancel(self) -> None:
+        import contextlib
+
         self._cancelled = True
         if self._proc is not None:
-            try:
+            with contextlib.suppress(Exception):
                 self._proc.force_exit()
-            except Exception:
-                pass
 
     def reset(self) -> None:
         self._archive_path = None
@@ -174,6 +79,8 @@ class CoreBridge(GObject.Object):
         return self._core_bin or core_binary()
 
     def _run_analysis(self) -> None:
+        import os
+
         if os.environ.get("TRIPLEWRAPPER_GUI_MOCK") == "1":
             GLib.idle_add(self.emit, "analysis-ready", self._mock_analysis())
             return
@@ -185,9 +92,11 @@ class CoreBridge(GObject.Object):
             )
             return
         try:
+            archive = self._archive_path
+            assert archive is not None  # guarded by analyze()
             proc = subprocess.run(
-                [binary, "analyze", "-a", self._archive_path, "--json"],
-                capture_output=True, text=True, timeout=120,
+                [binary, "analyze", "-a", archive, "--json"],
+                capture_output=True, text=True, timeout=120, check=False,
             )
             out = (proc.stdout or "").strip().splitlines()
             for line in reversed(out):
@@ -203,6 +112,8 @@ class CoreBridge(GObject.Object):
             GLib.idle_add(self.emit, "analysis-failed", str(exc))
 
     def _run_operation(self, workspace: str, operation: str = "extract") -> None:
+        import os
+
         if os.environ.get("TRIPLEWRAPPER_GUI_MOCK") == "1":
             self._run_mock_operation()
             return
@@ -218,7 +129,9 @@ class CoreBridge(GObject.Object):
         except OSError as exc:
             GLib.idle_add(self.emit, "operation-failed", f"No se puede crear workspace: {exc}")
             return
-        self._spawn([binary, "run", "--archive", self._archive_path,
+        archive = self._archive_path
+        assert archive is not None  # guarded by start_operation()
+        self._spawn([binary, "run", "--archive", archive,
                      "--workspace", workspace, "--operation", operation,
                      "--output", workspace])
 
@@ -302,7 +215,7 @@ class CoreBridge(GObject.Object):
             raise FileNotFoundError("triplewrapper-core no encontrado")
         proc = subprocess.run(
             [binary, "queue", "list", "--status", "all", "--json"],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, timeout=30, check=False,
         )
         if proc.returncode != 0:
             raise RuntimeError((proc.stderr or "queue list falló").strip())
@@ -321,7 +234,7 @@ class CoreBridge(GObject.Object):
         cmd = [binary, "queue", "add", "-a", archive, "-o", operation, "--priority", priority]
         if output:
             cmd += ["--output", output]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
         if proc.returncode != 0:
             raise RuntimeError((proc.stderr or proc.stdout or "queue add falló").strip())
         try:

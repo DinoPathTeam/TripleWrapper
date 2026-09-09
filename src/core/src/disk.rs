@@ -1,15 +1,13 @@
 //! Disk scanning and monitoring
 
 use std::collections::HashMap;
-use std::path::{Path, PathBuf};
-use std::process::Command;
 use std::os::unix::ffi::OsStrExt;
 use std::os::unix::fs::MetadataExt;
+use std::path::Path;
+use std::process::Command;
 use sysinfo::{Disks, System};
-use tracing::{debug, warn};
 
 use crate::types::DiskInfo;
-use crate::{Result, TripleWrapperError};
 
 /// Disk scanner using sysinfo + lsblk for labels
 pub struct DiskScanner {
@@ -33,10 +31,10 @@ impl DiskScanner {
         let mut disks = Vec::new();
 
         let disks_info = Disks::new_with_refreshed_list();
-        
+
         for disk in disks_info.iter() {
             let mount_point = disk.mount_point().to_path_buf();
-            
+
             // Skip virtual filesystems
             let fs = disk.file_system().to_string_lossy().to_string();
             if Self::is_virtual_fs(&fs) {
@@ -79,9 +77,7 @@ impl DiskScanner {
                 return cached.clone();
             }
 
-            let output = Command::new("lsblk")
-                .args(["-no", "LABEL", dev])
-                .output();
+            let output = Command::new("lsblk").args(["-no", "LABEL", dev]).output();
 
             if let Ok(out) = output {
                 let label = String::from_utf8_lossy(&out.stdout).trim().to_string();
@@ -102,9 +98,8 @@ impl DiskScanner {
 
     /// Scan common external mount points
     fn scan_external_mounts(&self) -> Vec<DiskInfo> {
-        const EXTERNAL_PATHS: &[&str] = &[
-            "/mnt", "/media", "/run/media", "/mnt/external", "/mnt/usb",
-        ];
+        const EXTERNAL_PATHS: &[&str] =
+            &["/mnt", "/media", "/run/media", "/mnt/external", "/mnt/usb"];
         let mut disks = Vec::new();
 
         for base in EXTERNAL_PATHS {
@@ -146,7 +141,11 @@ impl DiskScanner {
     }
 
     /// Find disk containing a path
-    pub fn find_disk_for_path<'a>(&self, path: &Path, disks: &'a [DiskInfo]) -> Option<&'a DiskInfo> {
+    pub fn find_disk_for_path<'a>(
+        &self,
+        path: &Path,
+        disks: &'a [DiskInfo],
+    ) -> Option<&'a DiskInfo> {
         let abs_path = path.canonicalize().ok()?;
         disks
             .iter()
@@ -157,10 +156,30 @@ impl DiskScanner {
     fn is_virtual_fs(fs: &str) -> bool {
         matches!(
             fs,
-            "proc" | "sysfs" | "devtmpfs" | "devpts" | "tmpfs" | "cgroup" | "cgroup2"
-                | "pstore" | "bpf" | "tracefs" | "securityfs" | "configfs" | "debugfs"
-                | "hugetlbfs" | "mqueue" | "nsfs" | "rpc_pipefs" | "autofs" | "efivarfs"
-                | "fuse.lxcfs" | "fuse.portal" | "overlay" | "squashfs" | "iso9660"
+            "proc"
+                | "sysfs"
+                | "devtmpfs"
+                | "devpts"
+                | "tmpfs"
+                | "cgroup"
+                | "cgroup2"
+                | "pstore"
+                | "bpf"
+                | "tracefs"
+                | "securityfs"
+                | "configfs"
+                | "debugfs"
+                | "hugetlbfs"
+                | "mqueue"
+                | "nsfs"
+                | "rpc_pipefs"
+                | "autofs"
+                | "efivarfs"
+                | "fuse.lxcfs"
+                | "fuse.portal"
+                | "overlay"
+                | "squashfs"
+                | "iso9660"
         )
     }
 
@@ -207,7 +226,7 @@ impl DiskScanner {
 /// Cross-platform disk usage using statvfs
 #[cfg(target_family = "unix")]
 fn disk_usage(path: &Path) -> std::io::Result<(u64, u64)> {
-    use libc::{statvfs, c_char};
+    use libc::statvfs;
     let mut statfs: statvfs = unsafe { std::mem::zeroed() };
     let c_path = std::ffi::CString::new(path.as_os_str().as_bytes())?;
     let ret = unsafe { statvfs(c_path.as_ptr(), &mut statfs) };
@@ -242,9 +261,14 @@ mod tests {
         let mut scanner = DiskScanner::new();
         let disks = scanner.scan();
         assert!(!disks.is_empty(), "Should find at least root disk");
-        
+
         for disk in &disks {
-            println!("{}: {} GB free / {} GB total", disk.label, disk.free_gb(), disk.total_gb());
+            println!(
+                "{}: {} GB free / {} GB total",
+                disk.label,
+                disk.free_gb(),
+                disk.total_gb()
+            );
         }
     }
 }

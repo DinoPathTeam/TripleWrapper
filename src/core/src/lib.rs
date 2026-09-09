@@ -1,5 +1,5 @@
 //! TripleWrapper Core Library
-//! 
+//!
 //! High-performance archive management engine with intelligent storage decisions.
 
 pub mod archive;
@@ -17,5 +17,5 @@ pub mod types;
 pub mod utils;
 
 pub use error::{Result, TripleWrapperError};
+pub use queue::{OperationQueue, Priority, QueueConfig, QueueItem, QueueItemStatus};
 pub use types::*;
-pub use queue::{OperationQueue, QueueConfig, QueueItem, QueueItemStatus, Priority};
