@@ -206,7 +206,8 @@ flatpak run com.triplewrapper.TripleWrapper
 
 ## Security
 
-- **Flatpak sandbox** with minimal permissions
+- **Local-only, offline-first**: todo el proceso corre en tu máquina, sin cloud ni cuentas
+- **Flatpak sandbox** with minimal permissions (sin acceso a red)
 - **No setuid/setgid** - uses polkit/udisks2 for mount operations
 - **Checksum verification** before any file replacement
 - **Atomic rename** (renameat2) for in-place safety
@@ -214,10 +215,16 @@ flatpak run com.triplewrapper.TripleWrapper
 
 ## Roadmap
 
-- [ ] **v0.2**: Batch operations, queue management
-- [ ] **v0.3**: Cloud storage backends (rclone integration)
-- [ ] **v0.4**: Plugin system for custom formats
+- [x] **v0.1**: Foundation (storage engine, archive operator, GUI base)
+- [x] **v0.2**: Batch operations, queue management
+- [x] **v0.2.1**: Real core integration (JSON protocol, queue wiring)
+- [ ] **v0.3**: Local avanzado (archivos cifrados 7z AES, reanudar operaciones grandes, base local de integridad)
+- [ ] **v0.4**: Plugin system for custom formats (solo plugins locales, sin red)
 - [ ] **v1.0**: Stable API, Flathub publication
+
+> **Principio local-only**: sin backends cloud (fuera rclone), sin telemetría externa,
+> sin dependencias de red para operar. Los mounts de red (`/mnt`, NFS/SMB) se tratan
+> solo como rutas locales opcionales, nunca como servicios.
 
 ## License
 

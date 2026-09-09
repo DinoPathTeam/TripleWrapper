@@ -305,6 +305,7 @@ El agente debe comunicarse con el creador de forma:
 - **Build:** Cargo, Meson, Flatpak Builder
 - **CI/CD:** GitHub Actions
 - **Distribución:** Flatpak (Flathub), AUR, GitHub Releases
+- **Principio local-only:** todo en la máquina del usuario, sin cloud, sin red (Flatpak sin `--share=network`), sin telemetría externa
 
 ---
 
