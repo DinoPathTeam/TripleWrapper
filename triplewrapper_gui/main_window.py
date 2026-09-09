@@ -1,0 +1,161 @@
+"""Main application window with view stack."""
+from __future__ import annotations
+
+import gi
+
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+
+from gi.repository import Adw, Gio, Gtk
+
+from .core.bridge import CoreBridge
+from .views.analysis_view import AnalysisView
+from .views.progress_view import ProgressView
+from .views.welcome_view import WelcomeView
+
+
+class TripleWrapperWindow(Adw.ApplicationWindow):
+    """Primary window holding the navigation stack."""
+
+    def __init__(self, **kwargs) -> None:
+        super().__init__(
+            title="TripleWrapper",
+            default_width=900,
+            default_height=680,
+            **kwargs,
+        )
+
+        self._bridge = CoreBridge()
+        self.build_ui()
+        self.bind_signals()
+
+    # ------------------------------------------------------------------ UI
+    def build_ui(self) -> None:
+        # Top-level layout
+        self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.set_content(self.main_box)
+
+        # Header bar
+        self._header = Adw.HeaderBar()
+        self._header.set_show_end_title_buttons(True)
+
+        # Style menu
+        style_menu = Gio.Menu()
+        style_section = Gio.Menu()
+        style_section.append("Claro", "app.style-light")
+        style_section.append("Oscuro", "app.style-dark")
+        style_section.append("Sistema", "app.style-default")
+        style_menu.append_section("Apariencia", style_section)
+
+        menu_btn = Gtk.MenuButton(menu_model=style_menu)
+        menu_btn.set_icon_name("open-menu-symbolic")
+        menu_btn.set_tooltip_text("Preferencias")
+        self._header.pack_end(menu_btn)
+
+        self.main_box.append(self._header)
+
+        # Navigation view (responsive: collapses on narrow widths)
+        self._nav = Adw.NavigationView()
+        self.main_box.append(self._nav)
+
+        # View stack
+        self._stack = Gtk.Stack()
+        self._stack.set_transition_type(Gtk.StackTransitionType.CROSSFADE)
+        self._stack.set_transition_duration(220)
+        self._stack.set_vexpand(True)
+        self._stack.set_hexpand(True)
+
+        # Wrap stack in a clamp for responsive padding on large screens
+        clamp = Adw.Clamp()
+        clamp.set_maximum_size(1100)
+        clamp.set_tightening_threshold(720)
+        clamp.set_child(self._stack)
+        clamp.set_margin_top(18)
+        clamp.set_margin_bottom(18)
+        clamp.set_margin_start(18)
+        clamp.set_margin_end(18)
+
+        page = Adw.NavigationPage(title="TripleWrapper")
+        page.set_child(clamp)
+        self._nav.push(page)
+
+        # Views
+        self._welcome = WelcomeView()
+        self._analysis = AnalysisView()
+        self._progress = ProgressView()
+
+        self._stack.add_named(self._welcome, "welcome")
+        self._stack.add_named(self._analysis, "analysis")
+        self._stack.add_named(self._progress, "progress")
+
+        self._stack.set_visible_child_name("welcome")
+
+    # --------------------------------------------------------------- Events
+    def bind_signals(self) -> None:
+        self._welcome.connect("file-selected", self.on_file_selected)
+        self._welcome.connect("analyze-requested", self.on_analyze_requested)
+
+        self._analysis.connect("start-requested", self.on_start_requested)
+        self._analysis.connect("back-requested", lambda *_: self.go_welcome())
+
+        self._progress.connect("done", self.on_done)
+        self._progress.connect("cancel-requested", self.on_cancel)
+
+        self._bridge.connect("analysis-ready", self.on_analysis_ready)
+        self._bridge.connect("analysis-failed", self.on_analysis_failed)
+        self._bridge.connect("progress-tick", self.on_progress_tick)
+        self._bridge.connect("operation-failed", self.on_operation_failed)
+
+    # ------------------------------------------------------------- Navigation
+    def go_welcome(self) -> None:
+        self._stack.set_visible_child_name("welcome")
+
+    def go_analysis(self) -> None:
+        self._stack.set_visible_child_name("analysis")
+
+    def go_progress(self) -> None:
+        self._stack.set_visible_child_name("progress")
+
+    # -------------------------------------------------------------- Handlers
+    def on_file_selected(self, view, path: str) -> None:
+        self._bridge.set_archive_path(path)
+
+    def on_analyze_requested(self, view) -> None:
+        self._welcome.set_busy(True)
+        self._bridge.analyze()
+
+    def on_analysis_ready(self, bridge, report) -> None:
+        self._welcome.set_busy(False)
+        self._analysis.set_report(report)
+        self.go_analysis()
+
+    def on_analysis_failed(self, bridge, message: str) -> None:
+        self._welcome.set_busy(False)
+        self.show_toast(message, priority=Adw.ToastPriority.HIGH)
+
+    def on_start_requested(self, view) -> None:
+        workspace = self._analysis.get_selected_workspace()
+        self._progress.reset()
+        self.go_progress()
+        self._bridge.start_operation(workspace)
+
+    def on_progress_tick(self, bridge, tick) -> None:
+        self._progress.update_tick(tick)
+
+    def on_done(self, _view) -> None:
+        self.go_welcome()
+        self._bridge.reset()
+
+    def on_cancel(self, _view) -> None:
+        self._bridge.cancel()
+        self.go_welcome()
+
+    def on_operation_failed(self, bridge, message: str) -> None:
+        self.show_toast(message, priority=Adw.ToastPriority.HIGH)
+        self.go_welcome()
+
+    # --------------------------------------------------------------- Helpers
+    def show_toast(self, text: str, priority: Adw.ToastPriority = Adw.ToastPriority.NORMAL) -> None:
+        toast = Adw.Toast(title=text, priority=priority)
+        overlay = Adw.ToastOverlay()
+        overlay.add_toast(toast)

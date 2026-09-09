@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<gresources>
+  <gresource prefix="/com/github/triplewrapper">
+    <!-- Icons, UI templates, etc. can be added here -->
+  </gresource>
+</gresources>

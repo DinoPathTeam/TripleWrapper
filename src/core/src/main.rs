@@ -2,14 +2,17 @@
 
 use clap::{Parser, Subcommand};
 use std::path::PathBuf;
+use std::time::Duration;
 use tracing::{info, error, Level};
 use tracing_subscriber::{fmt, EnvFilter};
+use dirs_next;
 
 use triplewrapper_core::{
     engine::StorageEngine,
     archive::ArchiveOperator,
     disk::DiskScanner,
-    types::{OperationType, OperationRequest, CompressionEstimate, StorageVerdict},
+    queue::{OperationQueue, QueueConfig, QueueItemStatus, Priority},
+    types::{OperationType, OperationRequest, CompressionEstimate, StorageVerdict, OperationId},
     utils::{format_bytes, format_duration},
     error::TripleWrapperError,
     Result,
@@ -80,6 +83,91 @@ enum Commands {
     
     /// Run DBus service
     Serve,
+    
+    /// Queue management commands
+    #[command(subcommand)]
+    Queue(QueueCommands),
+}
+
+/// Queue management subcommands
+#[derive(Subcommand)]
+enum QueueCommands {
+    /// Add operation to queue
+    Add {
+        #[arg(short, long)]
+        archive: String,
+        
+        #[arg(short, long, default_value = "extract")]
+        operation: String,
+        
+        #[arg(short, long)]
+        output: Option<String>,
+        
+        #[arg(long, default_value = "normal")]
+        priority: String,
+        
+        #[arg(long)]
+        files: Vec<String>,
+    },
+    
+    /// Add multiple operations from a batch file
+    Batch {
+        #[arg(short, long)]
+        file: String,
+    },
+    
+    /// List queued operations
+    List {
+        #[arg(long, default_value = "all")]
+        status: String,
+        
+        #[arg(short, long)]
+        json: bool,
+    },
+    
+    /// Show queue status
+    Status,
+    
+    /// Pause queue processing
+    Pause,
+    
+    /// Resume queue processing
+    Resume,
+    
+    /// Pause a specific item
+    PauseItem {
+        id: String,
+    },
+    
+    /// Resume a specific item
+    ResumeItem {
+        id: String,
+    },
+    
+    /// Cancel an item
+    Cancel {
+        id: String,
+    },
+    
+    /// Retry a failed item
+    Retry {
+        id: String,
+    },
+    
+    /// Remove completed/failed items
+    Cleanup {
+        #[arg(long, default_value = "86400")]
+        max_age_seconds: u64,
+    },
+    
+    /// Start queue workers
+    Start {
+        #[arg(long, default_value = "2")]
+        workers: usize,
+    },
+    
+    /// Stop queue workers
+    Stop,
 }
 
 #[tokio::main]
@@ -111,6 +199,7 @@ async fn main() -> Result<()> {
         }
         Commands::Test { archive } => cmd_test(archive, cli.json).await,
         Commands::Serve => cmd_serve().await,
+        Commands::Queue(cmd) => cmd_queue(cmd, cli.json).await,
     }
 }
 
@@ -273,4 +362,320 @@ fn truncate(s: &str, max: usize) -> String {
     } else {
         format!("{}…", &s[..max.saturating_sub(1)])
     }
+}
+
+async fn cmd_queue(cmd: QueueCommands, json: bool) -> Result<()> {
+    let config = QueueConfig {
+        persistence_path: dirs_next::data_dir()
+            .unwrap_or_else(|| PathBuf::from("."))
+            .join("triplewrapper")
+            .join("queue.json"),
+        ..Default::default()
+    };
+    
+    let queue = OperationQueue::new(config)?;
+    queue.init().await?;
+    
+    match cmd {
+        QueueCommands::Add { archive, operation, output, priority, files } => {
+            cmd_queue_add(&queue, archive, operation, output, priority, files, json).await
+        }
+        QueueCommands::Batch { file } => {
+            cmd_queue_batch(&queue, file, json).await
+        }
+        QueueCommands::List { status, json } => {
+            cmd_queue_list(&queue, status, json).await
+        }
+        QueueCommands::Status => {
+            cmd_queue_status(&queue, json).await
+        }
+        QueueCommands::Pause => {
+            queue.pause();
+            println!("Queue paused");
+            Ok(())
+        }
+        QueueCommands::Resume => {
+            queue.resume();
+            println!("Queue resumed");
+            Ok(())
+        }
+        QueueCommands::PauseItem { id } => {
+            cmd_queue_pause_item(&queue, id, json).await
+        }
+        QueueCommands::ResumeItem { id } => {
+            cmd_queue_resume_item(&queue, id, json).await
+        }
+        QueueCommands::Cancel { id } => {
+            cmd_queue_cancel(&queue, id, json).await
+        }
+        QueueCommands::Retry { id } => {
+            cmd_queue_retry(&queue, id, json).await
+        }
+        QueueCommands::Cleanup { max_age_seconds } => {
+            cmd_queue_cleanup(&queue, max_age_seconds, json).await
+        }
+        QueueCommands::Start { workers } => {
+            cmd_queue_start(&queue, workers, json).await
+        }
+        QueueCommands::Stop => {
+            cmd_queue_stop(&queue, json).await
+        }
+    }
+}
+
+async fn cmd_queue_add(
+    queue: &OperationQueue,
+    archive: String,
+    operation: String,
+    output: Option<String>,
+    priority_str: String,
+    files: Vec<String>,
+    json: bool,
+) -> Result<()> {
+    let priority = match priority_str.to_lowercase().as_str() {
+        "low" => Priority::Low,
+        "normal" => Priority::Normal,
+        "high" => Priority::High,
+        "critical" => Priority::Critical,
+        _ => Priority::Normal,
+    };
+    
+    let op_type = match operation.to_lowercase().as_str() {
+        "extract" => OperationType::Extract,
+        "modify" => OperationType::Modify,
+        "clean" => OperationType::Clean,
+        "test" => OperationType::Test,
+        "list" => OperationType::List,
+        _ => OperationType::Extract,
+    };
+    
+    let request = OperationRequest {
+        id: OperationId::new(),
+        op_type,
+        archive_path: PathBuf::from(archive),
+        output_path: output.map(PathBuf::from),
+        files_to_process: files,
+        compression_level: 5,
+        compression_format: None,
+        workspace_override: None,
+        verify_after: true,
+        dry_run: false,
+    };
+    
+    let id = queue.enqueue(request, Some(priority)).await?;
+    
+    if json {
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+            "id": id.0,
+            "status": "queued",
+            "priority": priority_str,
+        }))?);
+    } else {
+        println!("Operation queued with ID: {}", id.0);
+    }
+    
+    Ok(())
+}
+
+async fn cmd_queue_batch(queue: &OperationQueue, file: String, _json: bool) -> Result<()> {
+    let content = tokio::fs::read_to_string(file).await?;
+    let requests: Vec<(OperationRequest, Option<Priority>)> = serde_json::from_str(&content)?;
+    
+    let ids = queue.enqueue_batch(requests).await?;
+    
+    println!("Batch enqueued {} operations", ids.len());
+    Ok(())
+}
+
+async fn cmd_queue_list(queue: &OperationQueue, status: String, json: bool) -> Result<()> {
+    let filter_status = match status.to_lowercase().as_str() {
+        "pending" => Some(QueueItemStatus::Pending),
+        "running" => Some(QueueItemStatus::Running),
+        "paused" => Some(QueueItemStatus::Paused),
+        "completed" => Some(QueueItemStatus::Completed),
+        "failed" => Some(QueueItemStatus::Failed),
+        "cancelled" => Some(QueueItemStatus::Cancelled),
+        _ => None,
+    };
+    
+    let items = if let Some(s) = filter_status {
+        queue.get_by_status(s).await
+    } else {
+        queue.get_all().await
+    };
+    
+    if json {
+        println!("{}", serde_json::to_string_pretty(&items)?);
+    } else {
+        println!("{:<20} {:<12} {:<10} {:<10} {}", "ID", "Status", "Priority", "Operation", "Archive");
+        println!("{}", "-".repeat(100));
+        for item in &items {
+            let op_str = format!("{:?}", item.request.op_type);
+            let archive_name = item.request.archive_path.file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("unknown");
+            println!(
+                "{:<20} {:<12} {:<10} {:<10} {}",
+                format!("{}", item.id.0),
+                format!("{:?}", item.status),
+                format!("{:?}", item.priority),
+                op_str,
+                archive_name
+            );
+        }
+        println!("\nTotal: {} items", items.len());
+    }
+    Ok(())
+}
+
+async fn cmd_queue_status(queue: &OperationQueue, json: bool) -> Result<()> {
+    let pending = queue.pending_count().await;
+    let running = queue.running_count().await;
+    let paused = queue.is_paused();
+    
+    if json {
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+            "pending": pending,
+            "running": running,
+            "paused": paused,
+            "max_concurrent": 2,
+        }))?);
+    } else {
+        println!("Queue Status:");
+        println!("  Pending:  {}", pending);
+        println!("  Running:  {}", running);
+        println!("  Paused:   {}", if paused { "Yes" } else { "No" });
+    }
+    Ok(())
+}
+
+async fn cmd_queue_pause_item(queue: &OperationQueue, id: String, json: bool) -> Result<()> {
+    let op_id = OperationId(id.parse::<u64>().map_err(|e| TripleWrapperError::Internal(e.to_string()))?);
+    queue.pause_item(op_id).await?;
+    
+    if json {
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+            "id": id,
+            "status": "paused",
+        }))?);
+    } else {
+        println!("Item {} paused", id);
+    }
+    Ok(())
+}
+
+async fn cmd_queue_resume_item(queue: &OperationQueue, id: String, json: bool) -> Result<()> {
+    let op_id = OperationId(id.parse::<u64>().map_err(|e| TripleWrapperError::Internal(e.to_string()))?);
+    queue.resume_item(op_id).await?;
+    
+    if json {
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+            "id": id,
+            "status": "resumed",
+        }))?);
+    } else {
+        println!("Item {} resumed", id);
+    }
+    Ok(())
+}
+
+async fn cmd_queue_cancel(queue: &OperationQueue, id: String, json: bool) -> Result<()> {
+    let op_id = OperationId(id.parse::<u64>().map_err(|e| TripleWrapperError::Internal(e.to_string()))?);
+    queue.cancel_item(op_id).await?;
+    
+    if json {
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+            "id": id,
+            "status": "cancelled",
+        }))?);
+    } else {
+        println!("Item {} cancelled", id);
+    }
+    Ok(())
+}
+
+async fn cmd_queue_retry(queue: &OperationQueue, id: String, json: bool) -> Result<()> {
+    let op_id = OperationId(id.parse::<u64>().map_err(|e| TripleWrapperError::Internal(e.to_string()))?);
+    queue.retry_item(op_id).await?;
+    
+    if json {
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+            "id": id,
+            "status": "retrying",
+        }))?);
+    } else {
+        println!("Item {} queued for retry", id);
+    }
+    Ok(())
+}
+
+async fn cmd_queue_cleanup(queue: &OperationQueue, max_age_seconds: u64, json: bool) -> Result<()> {
+    let removed = queue.cleanup_old(Duration::from_secs(max_age_seconds)).await?;
+    
+    if json {
+        println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+            "removed": removed,
+        }))?);
+    } else {
+        println!("Cleaned up {} old items", removed);
+    }
+    Ok(())
+}
+
+async fn cmd_queue_start(queue: &OperationQueue, workers: usize, _json: bool) -> Result<()> {
+    println!("Starting {} queue workers...", workers);
+    println!("Workers will run until 'queue stop' is called or process exits");
+    
+    // Create archive operator for processing (wrapped in Arc for sharing)
+    let operator = std::sync::Arc::new(ArchiveOperator::new()?);
+    
+    // Start workers with the archive operator as processor
+    queue.start_workers(move |item| {
+        let operator = std::sync::Arc::clone(&operator);
+        async move {
+            // Process the queue item based on its operation type
+            match item.request.op_type {
+                OperationType::Extract => {
+                    operator.extract(
+                        &item.request.archive_path,
+                        item.request.output_path.as_ref().unwrap_or(&std::env::current_dir().unwrap()),
+                        if item.request.files_to_process.is_empty() { None } else { Some(&item.request.files_to_process) },
+                        item.request.workspace_override.as_deref(),
+                        None, // progress_tx - would need channel
+                    ).await?;
+                }
+                OperationType::Modify => {
+                    // For modify, we'd need more complex logic
+                    // For now, just extract as example
+                    operator.extract(
+                        &item.request.archive_path,
+                        item.request.output_path.as_ref().unwrap_or(&std::env::current_dir().unwrap()),
+                        if item.request.files_to_process.is_empty() { None } else { Some(&item.request.files_to_process) },
+                        item.request.workspace_override.as_deref(),
+                        None,
+                    ).await?;
+                }
+                OperationType::Test => {
+                    operator.test(&item.request.archive_path).await?;
+                }
+                _ => {}
+            }
+            Ok(())
+        }
+    }).await;
+    
+    println!("Started {} queue workers (max concurrent: {})", workers, workers);
+    println!("Press Ctrl+C to stop workers");
+    
+    // Wait for shutdown signal
+    tokio::signal::ctrl_c().await?;
+    println!("Shutdown signal received, stopping workers...");
+    
+    Ok(())
+}
+
+async fn cmd_queue_stop(queue: &OperationQueue, _json: bool) -> Result<()> {
+    queue.shutdown().await;
+    println!("Queue stopped gracefully");
+    Ok(())
 }

@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Optional
 
-from .widgets import SteamGraphWidget, DonutChartWidget, DonutLegendWidget, DiskPanelWidget
+from .widgets import SteamGraphWidget, DonutChartWidget, DonutLegendWidget, DiskPanelWidget, QueuePanelWidget
 from .core.client import get_core_client, DiskInfo, StorageVerdict
 from .utils.formatting import format_bytes, format_duration, format_speed
 from .utils.settings import Settings
@@ -30,6 +30,9 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         self._current_archive: Optional[str] = None
         self._current_verdict: Optional[StorageVerdict] = None
         self._operation_id = 0
+        
+        # Local queue for GUI (mirrors core queue)
+        self._local_queue = None
         
         self._build_ui()
         self._connect_core()
@@ -65,6 +68,12 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         
         # Top panel (GNOME Disks style)
         self._build_top_panel(content_box)
+        
+        # Separator
+        content_box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+        
+        # Queue panel (v0.2 - Batch operations)
+        self._build_queue_panel(content_box)
         
         # Separator
         content_box.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
@@ -161,6 +170,7 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         buttons = [
             ("Abrir archivo", "document-open-symbolic", self._on_open_file, True),
             ("Analizar", "system-search-symbolic", self._on_analyze, True),
+            ("Encolar", "list-add-symbolic", self._on_enqueue, True),
             ("Iniciar", "media-playback-start-symbolic", self._on_start, True),
             ("Cancelar", "process-stop-symbolic", self._on_cancel, False),
         ]
@@ -225,6 +235,18 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         
         parent.append(frame)
     
+    def _build_queue_panel(self, parent: Gtk.Box):
+        """Build queue panel for batch operations"""
+        # Frame for queue
+        frame = Gtk.Frame()
+        frame.add_css_class("queue-panel")
+        
+        self._queue_panel = QueuePanelWidget()
+        self._queue_panel.connect("item-action", self._on_queue_action)
+        frame.set_child(self._queue_panel)
+        
+        parent.append(frame)
+    
     def _build_status_bar(self, parent: Gtk.Box):
         """Build status bar at bottom"""
         status_bar = Adw.StatusPage()
@@ -246,9 +268,32 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
                 # Fall back to mock
                 self._core_client = await get_core_client(use_mock=True)
                 await self._refresh_disks()
+            
+            # Initialize local queue after core connection
+            await self._init_local_queue()
         
         import asyncio
         asyncio.create_task(connect())
+    
+    async def _init_local_queue(self):
+        """Initialize local queue mirroring core queue"""
+        from triplewrapper_core.queue import OperationQueue, QueueConfig
+        from pathlib import Path
+        import os
+        
+        # Get XDG data directory
+        data_dir = os.environ.get('XDG_DATA_HOME', os.path.expanduser('~/.local/share'))
+        persistence_path = Path(data_dir) / "triplewrapper" / "queue.json"
+        
+        config = QueueConfig(
+            persistence_path=persistence_path,
+        )
+        
+        self._local_queue = OperationQueue(config)
+        await self._local_queue.init()
+        
+        # Sync queue panel with local queue
+        self._sync_queue_panel()
     
     async def _refresh_disks(self):
         """Refresh disk list from core"""
@@ -315,6 +360,7 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         
         # Enable buttons
         self._action_buttons["Analizar"].set_sensitive(True)
+        self._action_buttons["Encolar"].set_sensitive(True)
         self._action_buttons["Iniciar"].set_sensitive(False)
         
         # Reset verdict
@@ -410,8 +456,8 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         if verdict.estimate:
             self._disk_panel.set_required_space(verdict.estimate.get('space_needed_for_rewrite', 0))
     
-    def _on_start(self, button: Gtk.Button):
-        """Start operation"""
+    def _on_enqueue(self, button: Gtk.Button):
+        """Add current operation to queue"""
         if not self._current_archive or not self._current_verdict or not self._core_client:
             return
         
@@ -420,12 +466,65 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
             self._current_verdict.requires_confirmation):
             return  # Wait for confirm button
         
-        self._start_operation()
+        self._add_to_queue()
+    
+    def _add_to_queue(self):
+        """Add current operation to queue"""
+        if not self._current_archive or not self._current_verdict or not self._core_client:
+            return
+        
+        # Determine workdir
+        workdir = None
+        if (self._current_verdict.verdict == 'external_required' and 
+            self._current_verdict.workspace_disk):
+            workdir = self._current_verdict.workspace_disk.mount_point + "/.triplewrapper_cache"
+        
+        # Create operation request
+        request = OperationRequest(
+            id=OperationId(0),
+            op_type=OperationType.MODIFY,
+            archive_path=Path(self._current_archive),
+            output_path=Path(workdir) if workdir else None,
+            files_to_process=[],
+            compression_level=self._settings.default_compression_level,
+            compression_format=None,
+            workspace_override=Path(workdir) if workdir else None,
+            verify_after=self._settings.verify_checksums,
+            dry_run=False,
+        )
+        
+        # Add to local queue
+        if self._local_queue:
+            async def enqueue_local():
+                try:
+                    op_id = await self._local_queue.enqueue(request, Some(Priority.NORMAL))
+                    # Update queue panel with new item
+                    GLib.idle_add(self._sync_queue_panel)
+                except Exception as e:
+                    GLib.idle_add(self._show_error, f"Error encolando: {e}")
+            
+            import asyncio
+            asyncio.create_task(enqueue_local())
+        else:
+            # Fallback to direct start if no local queue
+            asyncio.create_task(self._start_operation_direct())
+    
+    def _on_start(self, button: Gtk.Button):
+        """Start operation - add to queue"""
+        if not self._current_archive or not self._current_verdict or not self._core_client:
+            return
+        
+        # If external required and needs confirmation, wait for confirm
+        if (self._current_verdict.verdict == 'external_required' and 
+            self._current_verdict.requires_confirmation):
+            return  # Wait for confirm button
+        
+        self._add_to_queue()
     
     def _on_confirm_workspace(self, button: Gtk.Button):
         """Confirm external workspace"""
         self._confirm_btn.set_visible(False)
-        self._start_operation()
+        self._add_to_queue()
     
     def _start_operation(self):
         """Start the actual operation"""
@@ -529,6 +628,33 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
             
             import asyncio
             asyncio.create_task(cancel())
+    
+    def _on_disk_selected(self, disk: DiskInfo):
+        """Handle disk selection from panel"""
+        print(f"Disk selected: {disk.label} ({disk.mount_point})")
+    
+    def _on_queue_action(self, widget, action: str, item_id: str):
+        """Handle queue panel actions"""
+        if action == "pause_queue":
+            pass  # Queue pause handled by panel
+        elif action == "resume_queue":
+            pass
+        elif action in ("pause_item", "resume_item", "cancel_item", "retry_item") and item_id != "queue":
+            pass  # Item actions handled by panel
+        elif action == "add":
+            pass  # Add new operation
+    
+    def _sync_queue_panel(self):
+        """Sync queue panel with local queue"""
+        if not self._local_queue:
+            return
+        
+        async def sync():
+            items = await self._local_queue.get_all()
+            GLib.idle_add(self._queue_panel.set_items, items)
+        
+        import asyncio
+        asyncio.create_task(sync())
     
     def _on_disk_selected(self, disk: DiskInfo):
         """Handle disk selection from panel"""

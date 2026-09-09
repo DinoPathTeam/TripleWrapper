@@ -12,8 +12,10 @@ pub mod error;
 #[cfg(not(test))]
 pub mod ipc;
 pub mod progress;
+pub mod queue;
 pub mod types;
 pub mod utils;
 
 pub use error::{Result, TripleWrapperError};
 pub use types::*;
+pub use queue::{OperationQueue, QueueConfig, QueueItem, QueueItemStatus, Priority};
