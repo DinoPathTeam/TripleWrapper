@@ -32,6 +32,16 @@ class AnalysisView(Gtk.Box):
         self._build_ui()
 
     def _build_ui(self) -> None:
+        # Scrollable content: lets the window shrink vertically on short
+        # screens instead of locking its minimum height. Action bar stays
+        # visible below.
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scrolled.set_vexpand(True)
+        scrolled.set_child(content)
+        self.append(scrolled)
+
         # Header
         header = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         header.set_halign(Gtk.Align.CENTER)
@@ -43,7 +53,7 @@ class AnalysisView(Gtk.Box):
         subtitle = Gtk.Label(label="Revisa los requerimientos antes de iniciar")
         subtitle.add_css_class("dim-label")
         header.append(subtitle)
-        self.append(header)
+        content.append(header)
 
         # Two-column responsive grid
         grid = Gtk.Grid(column_spacing=18, row_spacing=18)
@@ -95,7 +105,7 @@ class AnalysisView(Gtk.Box):
 
         grid.attach(info_card, 1, 0, 1, 1)
 
-        self.append(grid)
+        content.append(grid)
 
         # Workspace suggestion
         self._workspace_card = Gtk.Frame()
@@ -133,7 +143,7 @@ class AnalysisView(Gtk.Box):
         self._integrity_label.set_wrap(True)
         ws_box.append(self._integrity_label)
 
-        self.append(self._workspace_card)
+        content.append(self._workspace_card)
 
         # Unmounted devices card (USB-HDD/SSD plugged but not mounted)
         devices_card = Gtk.Frame()
@@ -159,7 +169,7 @@ class AnalysisView(Gtk.Box):
         self._devices_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         dev_box.append(self._devices_box)
 
-        self.append(devices_card)
+        content.append(devices_card)
 
         # Action bar
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -206,7 +216,7 @@ class AnalysisView(Gtk.Box):
         self._queue_panel.set_size_request(0, 220)
         queue_box.append(self._queue_panel)
 
-        self.append(queue_card)
+        content.append(queue_card)
 
     # ----------------------------------------------------------------- API
     def set_report(self, report: AnalysisReport) -> None:

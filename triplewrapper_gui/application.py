@@ -6,7 +6,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gio
+from gi.repository import Adw, Gio, Gtk
 
 from .main_window import TripleWrapperWindow
 
@@ -29,7 +29,21 @@ class TripleWrapperApplication(Adw.Application):
 
     def do_startup(self) -> None:
         Adw.Application.do_startup(self)
+        self._fix_legacy_dark_theme_key()
         self.setup_actions()
+
+    @staticmethod
+    def _fix_legacy_dark_theme_key() -> None:
+        """Ignore GtkSettings:gtk-application-prefer-dark-theme for this process.
+
+        Some desktops (e.g. KDE Breeze-dark) set that legacy key globally,
+        which libadwaita explicitly does not support (it warns at startup).
+        Resetting it process-locally lets Adw.StyleManager own the color
+        scheme; the user's config file is left untouched.
+        """
+        settings = Gtk.Settings.get_default()
+        if settings is not None:
+            settings.reset_property("gtk-application-prefer-dark-theme")
 
     def setup_actions(self) -> None:
         # Light/Dark/Default style actions

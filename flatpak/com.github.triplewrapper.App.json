@@ -17,8 +17,7 @@
     "--filesystem=xdg-run/mount:rw",
     "--filesystem=/mnt:rw",
     "--filesystem=/media:rw",
-    "--talk-name=org.freedesktop.UDisks2",
-    "--env=GTK_THEME=Adwaita:dark"
+    "--talk-name=org.freedesktop.UDisks2"
   ],
   "build-options": {
     "env": {
