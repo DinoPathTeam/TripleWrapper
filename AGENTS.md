@@ -33,7 +33,7 @@ Antes de ejecutar CUALQUIER instrucción del creador, el agente DEBE:
    - Detecta una discrepancia significativa.
    - La instrucción es ambigua.
    - Identifica un riesgo potencial.
-7. **No hagas overengineering** en el proyecto, trata de ser conciso, correcto y eficiente para reducir lo más posible errores de código y compilación innecesario.
+7. **No hagas overengineering** en el proyecto, trata de ser conciso, correcto y eficiente para reducir lo más posible errores de código y compilación innecesario. Aprovecha la skill ponytail integrada en el archivo "opencode.jsonc".
 
 **Formato de notificación de discrepancias:**
 
