@@ -10,6 +10,7 @@ from gi.repository import Adw, Gio, Gtk
 
 from .core.bridge import CoreBridge
 from .views.analysis_view import AnalysisView
+from .views.browse_view import BrowseView
 from .views.progress_view import ProgressView
 from .views.welcome_view import WelcomeView
 
@@ -26,6 +27,7 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         )
 
         self._bridge = CoreBridge()
+        self._browse_pw: str | None = None
         self.build_ui()
         self.bind_signals()
 
@@ -87,8 +89,10 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         self._analysis = AnalysisView()
         self._progress = ProgressView()
 
+        self._browse = BrowseView()
         self._stack.add_named(self._welcome, "welcome")
         self._stack.add_named(self._analysis, "analysis")
+        self._stack.add_named(self._browse, "browse")
         self._stack.add_named(self._progress, "progress")
 
         self._stack.set_visible_child_name("welcome")
@@ -101,6 +105,9 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         self._analysis.connect("start-requested", self.on_start_requested)
         self._analysis.connect("enqueue-requested", self.on_enqueue_requested)
         self._analysis.connect("mount-requested", self.on_mount_requested)
+        self._browse.connect("delete-requested", self.on_browse_delete)
+        self._browse.connect("add-requested", self.on_browse_add)
+        self._browse.connect("back-requested", lambda *_: self.go_analysis())
         self._analysis.connect("back-requested", lambda *_: self.go_welcome())
 
         self._progress.connect("done", self.on_done)
@@ -116,6 +123,9 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
     # ------------------------------------------------------------- Navigation
     def go_welcome(self) -> None:
         self._stack.set_visible_child_name("welcome")
+
+    def go_browse(self) -> None:
+        self._stack.set_visible_child_name("browse")
 
     def go_analysis(self) -> None:
         self._stack.set_visible_child_name("analysis")
@@ -137,6 +147,7 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
     def on_analysis_ready(self, bridge, report) -> None:
         self._welcome.set_busy(False)
         self._report = report
+        self._browse_pw = None
         self._analysis.set_report(report)
         self.go_analysis()
         self.refresh_integrity_label()
@@ -220,6 +231,106 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
             GLib.idle_add(self.refresh_queue)
         except Exception as exc:  # noqa: BLE001
             GLib.idle_add(self.show_toast, f"No se pudo encolar: {exc}", Adw.ToastPriority.HIGH)
+
+    def on_browse_requested(self, view) -> None:
+        archive = self._bridge._archive_path
+        if not archive:
+            self.show_toast("No hay archivo para explorar", priority=Adw.ToastPriority.HIGH)
+            return
+        self.go_browse()
+        self.refresh_browse()
+
+    def refresh_browse(self) -> None:
+        import threading
+
+        threading.Thread(target=self._do_refresh_browse, daemon=True).start()
+
+    def _do_refresh_browse(self) -> None:
+        from gi.repository import GLib
+
+        try:
+            archive = self._bridge._archive_path
+            assert archive is not None  # guarded by on_browse_requested()
+            password = self._browse_password()
+            entries = self._bridge.archive_list(archive, password)
+            GLib.idle_add(self._browse.set_entries, entries)
+        except Exception as exc:  # noqa: BLE001
+            GLib.idle_add(
+                self.show_toast, f"No se pudo listar: {exc}", Adw.ToastPriority.HIGH,
+            )
+
+    def _browse_password(self) -> str | None:
+        """Cached password for this browse session (asked once via dialog)."""
+        if self._browse_pw is None and self._is_encrypted():
+            self._browse_pw = self.ensure_password()
+        return self._browse_pw
+
+    def on_browse_delete(self, view, paths: object) -> None:
+        selected = list(paths) if isinstance(paths, list) else []
+        if not selected:
+            self.show_toast("Selecciona al menos un archivo")
+            return
+        dialog = Adw.MessageDialog(
+            transient_for=self,
+            heading=f"¿Eliminar {len(selected)} archivo(s)?",
+            body="Se reescribirá el archivo de forma segura.",
+        )
+        dialog.add_response("cancel", "Cancelar")
+        dialog.add_response("ok", "Eliminar")
+        dialog.set_response_appearance("ok", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        dialog.connect("response", self._on_delete_confirmed, selected)
+        dialog.present()
+
+    def _on_delete_confirmed(self, dialog, response: str, selected: list) -> None:
+        import threading
+
+        if response != "ok":
+            return
+        archive = self._bridge._archive_path
+        password = self._browse_password()
+        if password is None and self._is_encrypted():
+            return
+        threading.Thread(
+            target=self._do_browse_delete, args=(archive, selected, password), daemon=True,
+        ).start()
+
+    def _do_browse_delete(self, archive: str, selected: list, password: str | None) -> None:
+        from gi.repository import GLib
+
+        try:
+            self._bridge.delete_files(archive, [str(p) for p in selected], password)
+            GLib.idle_add(self.show_toast, f"Eliminados {len(selected)} archivo(s)")
+            GLib.idle_add(self.refresh_browse)
+            GLib.idle_add(self.refresh_integrity_label)
+        except Exception as exc:  # noqa: BLE001
+            GLib.idle_add(self.show_toast, f"No se pudo eliminar: {exc}", Adw.ToastPriority.HIGH)
+
+    def on_browse_add(self, view, paths: object) -> None:
+        import threading
+
+        files = [str(p) for p in list(paths)] if isinstance(paths, list) else []
+        if not files:
+            return
+        archive = self._bridge._archive_path
+        password = self._browse_password()
+        if password is None and self._is_encrypted():
+            return
+        threading.Thread(
+            target=self._do_browse_add, args=(archive, files, password), daemon=True,
+        ).start()
+
+    def _do_browse_add(self, archive: str, files: list, password: str | None) -> None:
+        from gi.repository import GLib
+
+        try:
+            self._bridge.create_archive(archive, [str(f) for f in files], 5, password)
+            GLib.idle_add(self.show_toast, f"Añadidos {len(files)} archivo(s)")
+            GLib.idle_add(self.refresh_browse)
+            GLib.idle_add(self.refresh_integrity_label)
+        except Exception as exc:  # noqa: BLE001
+            GLib.idle_add(self.show_toast, f"No se pudo añadir: {exc}", Adw.ToastPriority.HIGH)
 
     def refresh_queue(self) -> None:
         import threading

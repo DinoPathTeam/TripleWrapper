@@ -20,6 +20,7 @@ class AnalysisView(Gtk.Box):
     __gsignals__ = {  # noqa: RUF012 - GObject signal map must be a dict
         "start-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "enqueue-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "browse-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "back-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "mount-requested": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
     }
@@ -178,6 +179,11 @@ class AnalysisView(Gtk.Box):
         enqueue_btn.add_css_class("pill")
         enqueue_btn.connect("clicked", lambda *_: self.emit("enqueue-requested"))
         actions.append(enqueue_btn)
+
+        browse_btn = Gtk.Button(label="Explorar contenido")
+        browse_btn.add_css_class("pill")
+        browse_btn.connect("clicked", lambda *_: self.emit("browse-requested"))
+        actions.append(browse_btn)
 
         self.append(actions)
 

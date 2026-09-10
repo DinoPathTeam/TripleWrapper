@@ -318,6 +318,30 @@ class CoreBridge(GObject.Object):
             raise RuntimeError((proc.stderr or proc.stdout or "mount falló").strip())
         return str(json.loads(proc.stdout).get("mount_point", ""))
 
+    def archive_list(self, archive: str, password: str | None = None) -> list[dict]:
+        """Run `list --json` and return archive entries. Password via child env."""
+        import os
+
+        binary = self._resolve_bin()
+        if not binary:
+            raise FileNotFoundError("triplewrapper-core no encontrado")
+        env = dict(os.environ)
+        if password:
+            env["TRIPLEWRAPPER_PASSWORD"] = password
+        proc = subprocess.run(
+            [binary, "-j", "list", "-a", archive],
+            capture_output=True, text=True, timeout=120, check=False,
+            env=env,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError((proc.stderr or proc.stdout or "list falló").strip())
+        try:
+            data = json.loads(proc.stdout or "{}")
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"salida inválida de list: {exc}") from exc
+        entries = data.get("entries", [])
+        return entries if isinstance(entries, list) else []
+
     def create_archive(self, archive: str, files: list[str], level: int = 5,
                          password: str | None = None) -> dict:
         """Run `create` and return stats. Password via child env only."""
@@ -326,7 +350,7 @@ class CoreBridge(GObject.Object):
         binary = self._resolve_bin()
         if not binary:
             raise FileNotFoundError("triplewrapper-core no encontrado")
-        cmd = [binary, "create", "-a", archive, "--level", str(level)]
+        cmd = [binary, "-j", "create", "-a", archive, "--level", str(level)]
         for f in files:
             cmd += ["-f", f]
         env = dict(os.environ)
@@ -347,7 +371,7 @@ class CoreBridge(GObject.Object):
         binary = self._resolve_bin()
         if not binary:
             raise FileNotFoundError("triplewrapper-core no encontrado")
-        cmd = [binary, "delete", "-a", archive]
+        cmd = [binary, "-j", "delete", "-a", archive]
         for f in files:
             cmd += ["-f", f]
         env = dict(os.environ)
