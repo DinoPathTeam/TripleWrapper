@@ -677,6 +677,7 @@ mod tests {
             workspace_override: None,
             verify_after: true,
             dry_run: false,
+            password: None,
         };
 
         let id = queue.enqueue(request, Some(Priority::High)).await.unwrap();
@@ -712,6 +713,7 @@ mod tests {
                 workspace_override: None,
                 verify_after: true,
                 dry_run: false,
+                password: None,
             };
             queue.enqueue(request, Some(Priority::Low)).await.unwrap();
         }
@@ -727,6 +729,7 @@ mod tests {
             workspace_override: None,
             verify_after: true,
             dry_run: false,
+            password: None,
         };
         queue
             .enqueue(request, Some(Priority::Critical))
@@ -778,6 +781,7 @@ mod tests {
                     workspace_override: None,
                     verify_after: true,
                     dry_run: false,
+                    password: None,
                 };
                 (request, Some(Priority::Normal))
             })
@@ -809,6 +813,7 @@ mod tests {
             workspace_override: None,
             verify_after: true,
             dry_run: false,
+            password: None,
         };
 
         let id = queue

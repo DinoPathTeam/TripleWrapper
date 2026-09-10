@@ -131,8 +131,10 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
 
     def on_analysis_ready(self, bridge, report) -> None:
         self._welcome.set_busy(False)
+        self._report = report
         self._analysis.set_report(report)
         self.go_analysis()
+        self.refresh_integrity_label()
 
     def on_analysis_failed(self, bridge, message: str) -> None:
         self._welcome.set_busy(False)
@@ -140,9 +142,52 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
 
     def on_start_requested(self, view) -> None:
         workspace = self._analysis.get_selected_workspace()
+        password = self.ensure_password()
+        if password is None and self._is_encrypted():
+            return  # user cancelled the password prompt
         self._progress.reset()
         self.go_progress()
-        self._bridge.start_operation(workspace)
+        self._bridge.start_operation(workspace, password=password)
+
+    def _is_encrypted(self) -> bool:
+        report = getattr(self, "_report", None)
+        return bool(report and report.encrypted)
+
+    def ensure_password(self) -> str | None:
+        """Ask for the archive password if the report says encrypted.
+
+        Returns the password, None when not needed, and None + cancelled
+        flag via dialog response when the user backs out.
+        """
+        if not self._is_encrypted():
+            return None
+        dialog = Adw.MessageDialog(
+            transient_for=self,
+            heading="Archivo cifrado",
+            body="Este archivo requiere contraseña (AES). No se guarda en ningún sitio.",
+        )
+        entry = Gtk.PasswordEntry(show_peek_icon=True)
+        entry.set_placeholder_text("Contraseña del archivo")
+        dialog.set_extra_child(entry)
+        dialog.add_response("cancel", "Cancelar")
+        dialog.add_response("ok", "Continuar")
+        dialog.set_response_appearance("ok", Adw.ResponseAppearance.SUGGESTED)
+        dialog.set_default_response("ok")
+        dialog.set_close_response("cancel")
+        chosen: list = []
+        dialog.connect("response", lambda d, r: chosen.append(r))
+        dialog.present()
+        # Poke the main loop until the user answers.
+        while not chosen:
+            import time
+
+            time.sleep(0.05)
+            while Gtk.events_pending():
+                Gtk.main_iteration()
+        text = str(entry.get_text())
+        if chosen[0] != "ok" or not text:
+            return None
+        return text
 
     def on_enqueue_requested(self, view) -> None:
         import threading
@@ -152,13 +197,18 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         if not archive:
             self.show_toast("No hay archivo para encolar", priority=Adw.ToastPriority.HIGH)
             return
-        threading.Thread(target=self._do_enqueue, args=(archive, workspace), daemon=True).start()
+        password = self.ensure_password()
+        if password is None and self._is_encrypted():
+            return
+        threading.Thread(
+            target=self._do_enqueue, args=(archive, workspace, password), daemon=True
+        ).start()
 
-    def _do_enqueue(self, archive: str, workspace: str | None) -> None:
+    def _do_enqueue(self, archive: str, workspace: str | None, password: str | None = None) -> None:
         from gi.repository import GLib
 
         try:
-            op_id = self._bridge.queue_add(archive, "extract", "normal", workspace)
+            op_id = self._bridge.queue_add(archive, "extract", "normal", workspace, password)
             GLib.idle_add(
                 self.show_toast, f"Encolado con ID {op_id}",
             )
@@ -170,6 +220,27 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         import threading
 
         threading.Thread(target=self._do_refresh_queue, daemon=True).start()
+
+    def refresh_integrity_label(self) -> None:
+        import threading
+
+        threading.Thread(target=self._do_refresh_integrity, daemon=True).start()
+
+    def _do_refresh_integrity(self) -> None:
+        from gi.repository import GLib
+
+        try:
+            archive = self._bridge._archive_path
+            if not archive:
+                return
+            record = self._bridge.integrity_last(archive)
+            if record:
+                text = f"Última verificación: BLAKE3 {record['blake3'][:16]}… ({record['size_bytes']} B)"
+            else:
+                text = "Sin historial de integridad local"
+            GLib.idle_add(self._analysis.set_integrity_text, text)
+        except Exception:  # noqa: BLE001 - best-effort background refresh
+            return
 
     def _do_refresh_queue(self) -> None:
         from gi.repository import GLib

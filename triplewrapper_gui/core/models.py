@@ -18,6 +18,7 @@ class AnalysisReport:
     status: str = "critical"              # "ok" | "external" | "critical"
     status_label: str = ""
     blake3_expected: str = ""
+    encrypted: bool = False
 
     @property
     def human_archive(self) -> str:

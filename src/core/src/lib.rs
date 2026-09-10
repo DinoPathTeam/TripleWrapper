@@ -9,6 +9,7 @@ pub mod config;
 pub mod disk;
 pub mod engine;
 pub mod error;
+pub mod integrity;
 #[cfg(not(test))]
 pub mod ipc;
 pub mod progress;

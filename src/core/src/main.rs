@@ -12,7 +12,7 @@ use triplewrapper_core::{
     engine::StorageEngine,
     error::TripleWrapperError,
     queue::{OperationQueue, Priority, QueueConfig, QueueItemStatus},
-    types::{OperationId, OperationRequest, OperationType, StorageVerdict},
+    types::{OperationId, OperationRequest, OperationType, Password, StorageVerdict},
     utils::{format_bytes, format_duration},
     Result,
 };
@@ -60,6 +60,10 @@ enum Commands {
     List {
         #[arg(short, long)]
         archive: String,
+
+        /// Archive password (prefer TRIPLEWRAPPER_PASSWORD env var)
+        #[arg(long)]
+        password: Option<String>,
     },
 
     /// Extract archive
@@ -72,12 +76,24 @@ enum Commands {
 
         #[arg(short, long)]
         files: Vec<String>,
+
+        /// Archive password (prefer TRIPLEWRAPPER_PASSWORD env var)
+        #[arg(long)]
+        password: Option<String>,
+
+        /// Resume: skip files already extracted with matching size
+        #[arg(long, default_value_t = false)]
+        resume: bool,
     },
 
     /// Test archive integrity
     Test {
         #[arg(short, long)]
         archive: String,
+
+        /// Archive password (prefer TRIPLEWRAPPER_PASSWORD env var)
+        #[arg(long)]
+        password: Option<String>,
     },
 
     /// Run DBus service
@@ -100,11 +116,48 @@ enum Commands {
         /// Output directory for extract (defaults to workspace)
         #[arg(short, long)]
         output: Option<String>,
+
+        /// Archive password (prefer TRIPLEWRAPPER_PASSWORD env var)
+        #[arg(long)]
+        password: Option<String>,
+
+        /// Resume: skip files already extracted with matching size
+        #[arg(long, default_value_t = false)]
+        resume: bool,
     },
 
     /// Queue management commands
     #[command(subcommand)]
     Queue(QueueCommands),
+
+    /// Local integrity database (BLAKE3 log, no network)
+    #[command(subcommand)]
+    Integrity(IntegrityCommands),
+}
+
+/// Local integrity database subcommands
+#[derive(Subcommand)]
+enum IntegrityCommands {
+    /// Hash an archive with BLAKE3 and append a record
+    Record {
+        #[arg(short, long)]
+        archive: String,
+
+        #[arg(short, long, default_value = "manual")]
+        operation: String,
+    },
+
+    /// Compare current file against its last record
+    Check {
+        #[arg(short, long)]
+        archive: String,
+    },
+
+    /// Show the last record for an archive
+    Last {
+        #[arg(short, long)]
+        archive: String,
+    },
 }
 
 /// Queue management subcommands
@@ -126,6 +179,10 @@ enum QueueCommands {
 
         #[arg(long)]
         files: Vec<String>,
+
+        /// Archive password (not persisted: must be re-supplied after restart)
+        #[arg(long)]
+        password: Option<String>,
     },
 
     /// Add multiple operations from a batch file
@@ -207,22 +264,74 @@ async fn main() -> Result<()> {
             add,
             ratio,
         } => cmd_analyze(archive, remove, add, ratio, cli.json).await,
-        Commands::List { archive } => cmd_list(archive, cli.json).await,
+        Commands::List { archive, password } => {
+            cmd_list(archive, resolve_password(password), cli.json).await
+        }
         Commands::Extract {
             archive,
             output,
             files,
-        } => cmd_extract(archive, output, files, cli.json).await,
-        Commands::Test { archive } => cmd_test(archive, cli.json).await,
+            password,
+            resume,
+        } => {
+            cmd_extract(
+                archive,
+                output,
+                files,
+                resolve_password(password),
+                resume,
+                cli.json,
+            )
+            .await
+        }
+        Commands::Test { archive, password } => {
+            cmd_test(archive, resolve_password(password), cli.json).await
+        }
         Commands::Serve => cmd_serve().await,
         Commands::Run {
             archive,
             workspace,
             operation,
             output,
-        } => cmd_run(archive, workspace, operation, output).await,
+            password,
+            resume,
+        } => {
+            cmd_run(
+                archive,
+                workspace,
+                operation,
+                output,
+                resolve_password(password),
+                resume,
+            )
+            .await
+        }
         Commands::Queue(cmd) => cmd_queue(cmd, cli.json).await,
+        Commands::Integrity(cmd) => cmd_integrity(cmd, cli.json).await,
     }
+}
+
+/// Resolve the archive password: explicit `--password` flag wins,
+/// otherwise `TRIPLEWRAPPER_PASSWORD`. The flag is visible in the process
+/// list, so the env var is preferred (warned on stderr when flag is used).
+/// The returned secret is never logged and never persisted.
+fn resolve_password(flag: Option<String>) -> Option<Password> {
+    match flag {
+        Some(pw) if !pw.is_empty() => {
+            eprintln!(
+                "warning: --password is visible to other local users via the process list; prefer TRIPLEWRAPPER_PASSWORD"
+            );
+            Some(Password::new(pw))
+        }
+        _ => std::env::var("TRIPLEWRAPPER_PASSWORD")
+            .ok()
+            .filter(|s| !s.is_empty())
+            .map(Password::new),
+    }
+}
+
+fn password_str(pw: Option<&Password>) -> Option<&str> {
+    pw.as_ref().map(|p| p.expose())
 }
 
 async fn cmd_disks(json: bool) -> Result<()> {
@@ -251,22 +360,29 @@ async fn cmd_disks(json: bool) -> Result<()> {
     Ok(())
 }
 
-async fn cmd_analyze(
-    archive: String,
-    remove: u64,
-    add: u64,
-    _ratio: f32,
-    json: bool,
-) -> Result<()> {
+async fn cmd_analyze(archive: String, remove: u64, add: u64, ratio: f32, json: bool) -> Result<()> {
     let mut engine = StorageEngine::new(Default::default());
     let archive_path = PathBuf::from(&archive);
-    let verdict = engine.quick_verdict(&archive_path, remove, add);
-
-    // Override estimate with provided ratio
-    // (In real implementation, would pass ratio to quick_verdict)
+    let current_size = std::fs::metadata(&archive_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let estimate = engine.calculate_estimate(current_size, remove, add, Some(ratio));
+    let verdict = engine.decide_workspace(&archive_path, &estimate);
 
     if json {
-        let report = analysis_report_from_verdict(&archive, &verdict);
+        // Encryption detection: content flags via list, plus stderr hints
+        // for header-encrypted archives (where even `7z l` needs the secret).
+        // stdin is always null so 7z can never block on a password prompt.
+        let mut encrypted = false;
+        if let Ok(op) = ArchiveOperator::new() {
+            if let Ok(meta) = op.list(&archive_path, None).await {
+                encrypted = meta.encrypted;
+            }
+            if !encrypted {
+                encrypted = op.is_encrypted(&archive_path).await;
+            }
+        }
+        let report = analysis_report_from_verdict(&archive, &verdict, encrypted);
         let event = serde_json::json!({"kind": "analysis", "data": report});
         println!("{}", serde_json::to_string(&event)?);
     } else {
@@ -275,7 +391,11 @@ async fn cmd_analyze(
     Ok(())
 }
 
-fn analysis_report_from_verdict(archive: &str, verdict: &StorageVerdict) -> serde_json::Value {
+fn analysis_report_from_verdict(
+    archive: &str,
+    verdict: &StorageVerdict,
+    encrypted: bool,
+) -> serde_json::Value {
     match verdict {
         StorageVerdict::InternalOk {
             source_disk,
@@ -293,6 +413,7 @@ fn analysis_report_from_verdict(archive: &str, verdict: &StorageVerdict) -> serd
                 "status": "ok",
                 "status_label": message,
                 "blake3_expected": "",
+                "encrypted": encrypted,
             })
         }
         StorageVerdict::ExternalRequired {
@@ -314,6 +435,7 @@ fn analysis_report_from_verdict(archive: &str, verdict: &StorageVerdict) -> serd
                 "status": "external",
                 "status_label": message,
                 "blake3_expected": "",
+                "encrypted": encrypted,
             })
         }
         StorageVerdict::CriticalError {
@@ -333,6 +455,7 @@ fn analysis_report_from_verdict(archive: &str, verdict: &StorageVerdict) -> serd
                 "status": "critical",
                 "status_label": message,
                 "blake3_expected": "",
+                "encrypted": encrypted,
             })
         }
     }
@@ -381,6 +504,8 @@ async fn cmd_run(
     workspace: String,
     operation: String,
     output: Option<String>,
+    password: Option<Password>,
+    resume: bool,
 ) -> Result<()> {
     use tokio::sync::mpsc;
 
@@ -401,9 +526,10 @@ async fn cmd_run(
     emit_tick("Iniciando", 0, total, 0.0, 0.0, 0.0);
 
     let operator = ArchiveOperator::new()?;
+    let pw = password_str(password.as_ref());
     match operation.to_lowercase().as_str() {
         "test" => {
-            let ok = operator.test(&archive_path).await?;
+            let ok = operator.test(&archive_path, pw).await?;
             if ok {
                 emit_tick("Verificación completa", total, total, 0.0, 0.0, 0.0);
                 Ok(())
@@ -420,10 +546,28 @@ async fn cmd_run(
             let (tx, mut rx) = mpsc::unbounded_channel();
             let archive_clone = archive_path.clone();
             let out_clone = out_dir.clone();
+            let pw_owned = password.clone();
             let handle = tokio::spawn(async move {
-                operator
-                    .extract(&archive_clone, &out_clone, None, None, Some(tx))
-                    .await
+                let pw = pw_owned.as_ref().map(|p| p.expose());
+                if resume {
+                    let (stats, skipped) = operator
+                        .resume_extract(&archive_clone, &out_clone, None, Some(tx), pw)
+                        .await?;
+                    info!("Resume skipped {} already-extracted files", skipped);
+                    Ok(stats)
+                } else {
+                    operator
+                        .extract(
+                            &archive_clone,
+                            &out_clone,
+                            triplewrapper_core::archive::ExtractOptions {
+                                progress_tx: Some(tx),
+                                password: pw,
+                                ..Default::default()
+                            },
+                        )
+                        .await
+                }
             });
             while let Some(t) = rx.recv().await {
                 emit_tick(
@@ -455,10 +599,12 @@ async fn cmd_run(
     }
 }
 
-async fn cmd_list(archive: String, json: bool) -> Result<()> {
+async fn cmd_list(archive: String, password: Option<Password>, json: bool) -> Result<()> {
     let operator = ArchiveOperator::new()?;
     let archive_path = PathBuf::from(archive);
-    let metadata = operator.list(&archive_path).await?;
+    let metadata = operator
+        .list(&archive_path, password_str(password.as_ref()))
+        .await?;
 
     if json {
         println!("{}", serde_json::to_string_pretty(&metadata)?);
@@ -491,6 +637,8 @@ async fn cmd_extract(
     archive: String,
     output: Option<String>,
     files: Vec<String>,
+    password: Option<Password>,
+    resume: bool,
     json: bool,
 ) -> Result<()> {
     let operator = ArchiveOperator::new()?;
@@ -505,15 +653,26 @@ async fn cmd_extract(
         out_dir.display()
     );
 
-    let stats = operator
-        .extract(
-            &archive_path,
-            &out_dir,
-            if files.is_empty() { None } else { Some(&files) },
-            None,
-            None,
-        )
-        .await?;
+    let pw = password_str(password.as_ref());
+    let stats = if resume {
+        let (stats, skipped) = operator
+            .resume_extract(&archive_path, &out_dir, None, None, pw)
+            .await?;
+        info!("Resume skipped {} already-extracted files", skipped);
+        stats
+    } else {
+        operator
+            .extract(
+                &archive_path,
+                &out_dir,
+                triplewrapper_core::archive::ExtractOptions {
+                    files: if files.is_empty() { None } else { Some(&files) },
+                    password: pw,
+                    ..Default::default()
+                },
+            )
+            .await?
+    };
 
     if json {
         println!("{}", serde_json::to_string_pretty(&stats)?);
@@ -528,10 +687,12 @@ async fn cmd_extract(
     Ok(())
 }
 
-async fn cmd_test(archive: String, json: bool) -> Result<()> {
+async fn cmd_test(archive: String, password: Option<Password>, json: bool) -> Result<()> {
     let operator = ArchiveOperator::new()?;
     let archive_path = PathBuf::from(archive);
-    let ok = operator.test(&archive_path).await?;
+    let ok = operator
+        .test(&archive_path, password_str(password.as_ref()))
+        .await?;
 
     if json {
         println!(
@@ -554,6 +715,60 @@ async fn cmd_serve() -> Result<()> {
     triplewrapper_core::ipc::run_service()
         .await
         .map_err(|e| crate::TripleWrapperError::Internal(e.to_string()))
+}
+
+async fn cmd_integrity(cmd: IntegrityCommands, json: bool) -> Result<()> {
+    use triplewrapper_core::integrity::IntegrityDb;
+
+    let db = IntegrityDb::open()?;
+    match cmd {
+        IntegrityCommands::Record { archive, operation } => {
+            let record = db.record(&PathBuf::from(&archive), &operation).await?;
+            if json {
+                println!("{}", serde_json::to_string(&record)?);
+            } else {
+                println!("Recorded BLAKE3 {} for {}", record.blake3, archive);
+            }
+        }
+        IntegrityCommands::Check { archive } => {
+            let path = PathBuf::from(&archive);
+            let (matches, current, _) = db.check(&path).await?;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string(&serde_json::json!({
+                        "kind": "integrity-check",
+                        "matches": matches,
+                        "blake3": current.blake3,
+                        "size_bytes": current.size_bytes,
+                    }))?
+                );
+            } else if matches {
+                println!("✓ {} matches last verified record", archive);
+            } else {
+                println!("✗ {} DIFFERS from last verified record", archive);
+                std::process::exit(1);
+            }
+        }
+        IntegrityCommands::Last { archive } => {
+            let record = db.last_for(&PathBuf::from(&archive)).await?;
+            if json {
+                println!("{}", serde_json::to_string(&record)?);
+            } else {
+                match record {
+                    Some(r) => println!(
+                        "Last verified: {} ({} bytes, BLAKE3 {}…, op {})",
+                        archive,
+                        r.size_bytes,
+                        &r.blake3[..16.min(r.blake3.len())],
+                        r.operation
+                    ),
+                    None => println!("No integrity history for {}", archive),
+                }
+            }
+        }
+    }
+    Ok(())
 }
 
 fn print_verdict(verdict: &triplewrapper_core::types::StorageVerdict) {
@@ -682,7 +897,20 @@ async fn cmd_queue(cmd: QueueCommands, json: bool) -> Result<()> {
             output,
             priority,
             files,
-        } => cmd_queue_add(&queue, archive, operation, output, priority, files, json).await,
+            password,
+        } => {
+            cmd_queue_add(
+                &queue,
+                archive,
+                operation,
+                output,
+                priority,
+                files,
+                resolve_password(password),
+                json,
+            )
+            .await
+        }
         QueueCommands::Batch { file } => cmd_queue_batch(&queue, file, json).await,
         QueueCommands::List { status, json } => cmd_queue_list(&queue, status, json).await,
         QueueCommands::Status => cmd_queue_status(&queue, json).await,
@@ -708,6 +936,8 @@ async fn cmd_queue(cmd: QueueCommands, json: bool) -> Result<()> {
     }
 }
 
+/// CLI glue: parameters mirror `QueueCommands::Add` 1:1 by design.
+#[allow(clippy::too_many_arguments)]
 async fn cmd_queue_add(
     queue: &OperationQueue,
     archive: String,
@@ -715,6 +945,7 @@ async fn cmd_queue_add(
     output: Option<String>,
     priority_str: String,
     files: Vec<String>,
+    password: Option<Password>,
     json: bool,
 ) -> Result<()> {
     let priority = match priority_str.to_lowercase().as_str() {
@@ -734,6 +965,11 @@ async fn cmd_queue_add(
         _ => OperationType::Extract,
     };
 
+    if password.is_some() {
+        eprintln!(
+            "note: queue passwords are kept in memory only and must be re-supplied after restart"
+        );
+    }
     let request = OperationRequest {
         id: OperationId::new(),
         op_type,
@@ -745,6 +981,7 @@ async fn cmd_queue_add(
         workspace_override: None,
         verify_after: true,
         dry_run: false,
+        password,
     };
 
     let id = queue.enqueue(request, Some(priority)).await?;
@@ -961,6 +1198,8 @@ async fn cmd_queue_start(queue: &mut OperationQueue, workers: usize, _json: bool
         .start_workers(move |item| {
             let operator = std::sync::Arc::clone(&operator);
             async move {
+                // Password lives only in memory (never persisted, see serde skip).
+                let pw = item.request.password.as_ref().map(|p| p.expose());
                 // Process the queue item based on its operation type
                 match item.request.op_type {
                     OperationType::Extract => {
@@ -971,13 +1210,16 @@ async fn cmd_queue_start(queue: &mut OperationQueue, workers: usize, _json: bool
                                     .output_path
                                     .as_ref()
                                     .unwrap_or(&std::env::current_dir().unwrap()),
-                                if item.request.files_to_process.is_empty() {
-                                    None
-                                } else {
-                                    Some(&item.request.files_to_process)
+                                triplewrapper_core::archive::ExtractOptions {
+                                    files: if item.request.files_to_process.is_empty() {
+                                        None
+                                    } else {
+                                        Some(&item.request.files_to_process)
+                                    },
+                                    workdir: item.request.workspace_override.as_deref(),
+                                    password: pw,
+                                    ..Default::default()
                                 },
-                                item.request.workspace_override.as_deref(),
-                                None, // progress_tx - would need channel
                             )
                             .await?;
                     }
@@ -991,18 +1233,21 @@ async fn cmd_queue_start(queue: &mut OperationQueue, workers: usize, _json: bool
                                     .output_path
                                     .as_ref()
                                     .unwrap_or(&std::env::current_dir().unwrap()),
-                                if item.request.files_to_process.is_empty() {
-                                    None
-                                } else {
-                                    Some(&item.request.files_to_process)
+                                triplewrapper_core::archive::ExtractOptions {
+                                    files: if item.request.files_to_process.is_empty() {
+                                        None
+                                    } else {
+                                        Some(&item.request.files_to_process)
+                                    },
+                                    workdir: item.request.workspace_override.as_deref(),
+                                    password: pw,
+                                    ..Default::default()
                                 },
-                                item.request.workspace_override.as_deref(),
-                                None,
                             )
                             .await?;
                     }
                     OperationType::Test => {
-                        operator.test(&item.request.archive_path).await?;
+                        operator.test(&item.request.archive_path, pw).await?;
                     }
                     _ => {}
                 }

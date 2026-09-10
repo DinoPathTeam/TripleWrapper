@@ -120,6 +120,17 @@ class AnalysisView(Gtk.Box):
         self._ws_status.set_halign(Gtk.Align.START)
         ws_box.append(self._ws_status)
 
+        self._crypto_label = Gtk.Label(label="")
+        self._crypto_label.set_halign(Gtk.Align.START)
+        self._crypto_label.add_css_class("dim-label")
+        ws_box.append(self._crypto_label)
+
+        self._integrity_label = Gtk.Label(label="Integridad local: sin datos")
+        self._integrity_label.set_halign(Gtk.Align.START)
+        self._integrity_label.add_css_class("dim-label")
+        self._integrity_label.set_wrap(True)
+        ws_box.append(self._integrity_label)
+
         self.append(self._workspace_card)
 
         # Action bar
@@ -212,6 +223,11 @@ class AnalysisView(Gtk.Box):
 
         # Workspace card
         self._ws_label.set_label(report.suggested_workspace)
+        if report.encrypted:
+            self._crypto_label.set_label("🔒 Archivo cifrado (AES) — pedirá contraseña al iniciar")
+        else:
+            self._crypto_label.set_label("Sin cifrado detectado")
+        self._integrity_label.set_label("Integridad local: consultando…")
         self._ws_status.set_label(report.status_label)
         self._ws_status.remove_css_class("success")
         self._ws_status.remove_css_class("warning")
@@ -226,6 +242,9 @@ class AnalysisView(Gtk.Box):
 
     def get_selected_workspace(self) -> str | None:
         return self._selected_workspace
+
+    def set_integrity_text(self, text: str) -> None:
+        self._integrity_label.set_label(f"Integridad local: {text}")
 
     def set_queue_items(self, items: list[QueueItem]) -> None:
         self._queue_panel.set_items(items)

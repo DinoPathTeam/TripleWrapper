@@ -37,6 +37,9 @@ sha2 = "0.10"
 xxhash-rust = { version = "0.8", features = ["xxh3"] }
 hex = "0.4"
 
+# Secret handling (passwords wiped on drop, never logged)
+zeroize = "1"
+
 # System info
 sysinfo = "0.30"
 libc = "0.2"

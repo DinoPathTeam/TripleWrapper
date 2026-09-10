@@ -34,6 +34,7 @@ class CoreBridge(GObject.Object):
         self._reader_thread: threading.Thread | None = None
         self._cancelled = False
         self._core_bin = core_bin
+        self._password: str | None = None
 
     # ----------------------------------------------------------------- API
     def set_archive_path(self, path: str) -> None:
@@ -53,11 +54,15 @@ class CoreBridge(GObject.Object):
             return
         threading.Thread(target=self._run_analysis, daemon=True).start()
 
-    def start_operation(self, workspace: str | None, operation: str = "extract") -> None:
+    def start_operation(self, workspace: str | None, operation: str = "extract",
+                          password: str | None = None) -> None:
         if not self._archive_path or not workspace:
             self.emit("operation-failed", "Faltan parámetros")
             return
         self._cancelled = False
+        # Password travels via child env only: never argv (visible in ps),
+        # never persisted. Cleared from this process when done.
+        self._password = password
         threading.Thread(
             target=self._run_operation, args=(workspace, operation), daemon=True
         ).start()
@@ -73,6 +78,7 @@ class CoreBridge(GObject.Object):
     def reset(self) -> None:
         self._archive_path = None
         self._proc = None
+        self._password = None
 
     # -------------------------------------------------------------- Workers
     def _resolve_bin(self) -> str | None:
@@ -131,9 +137,11 @@ class CoreBridge(GObject.Object):
             return
         archive = self._archive_path
         assert archive is not None  # guarded by start_operation()
+        password, self._password = self._password, None
         self._spawn([binary, "run", "--archive", archive,
                      "--workspace", workspace, "--operation", operation,
-                     "--output", workspace])
+                     "--output", workspace],
+                    extra_env={"TRIPLEWRAPPER_PASSWORD": password} if password else None)
 
     def _run_mock_operation(self) -> None:
         try:
@@ -171,10 +179,15 @@ class CoreBridge(GObject.Object):
         )
 
     # --------------------------------------------------------- Subprocess API
-    def _spawn(self, argv: list[str]) -> None:
-        """Spawn the Rust core and stream JSON events."""
+    def _spawn(self, argv: list[str], extra_env: dict | None = None) -> None:
+        """Spawn the Rust core and stream JSON events.
+
+        Secrets (password) travel via child env only, never argv.
+        """
         launcher = Gio.SubprocessLauncher()
         launcher.set_flags(Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE)
+        for key, value in (extra_env or {}).items():
+            launcher.setenv(key, value, True)
         self._proc = launcher.spawnv(argv)
         stdout = self._proc.get_stdout_pipe()
 
@@ -207,6 +220,24 @@ class CoreBridge(GObject.Object):
         elif kind == "error":
             GLib.idle_add(self.emit, "operation-failed", payload.get("message", "Error desconocido"))
 
+    # --------------------------------------------------------- Integrity API
+    def integrity_last(self, archive: str) -> dict | None:
+        """Return last integrity record via CLI (sync, call in thread)."""
+        binary = self._resolve_bin()
+        if not binary:
+            return None
+        proc = subprocess.run(
+            [binary, "integrity", "last", "-a", archive, "--json"],
+            capture_output=True, text=True, timeout=30, check=False,
+        )
+        if proc.returncode != 0:
+            return None
+        try:
+            data = json.loads(proc.stdout or "null")
+        except json.JSONDecodeError:
+            return None
+        return data if isinstance(data, dict) else None
+
     # ------------------------------------------------------------- Queue API
     def queue_list(self) -> list[dict]:
         """Run `queue list --json` and return raw items (sync, call in thread)."""
@@ -223,8 +254,13 @@ class CoreBridge(GObject.Object):
         return data if isinstance(data, list) else []
 
     def queue_add(self, archive: str, operation: str = "extract", priority: str = "normal",
-                  output: str | None = None) -> int:
-        """Run `queue add` and return numeric id."""
+                  output: str | None = None, password: str | None = None) -> int:
+        """Run `queue add` and return numeric id.
+
+        Password travels via child env only (never argv, never persisted).
+        """
+        import os
+
         ok, err = validate_archive_path(archive)
         if not ok:
             raise ValueError(err)
@@ -234,7 +270,11 @@ class CoreBridge(GObject.Object):
         cmd = [binary, "queue", "add", "-a", archive, "-o", operation, "--priority", priority]
         if output:
             cmd += ["--output", output]
-        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
+        env = dict(os.environ)
+        if password:
+            env["TRIPLEWRAPPER_PASSWORD"] = password
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False,
+                              env=env)
         if proc.returncode != 0:
             raise RuntimeError((proc.stderr or proc.stdout or "queue add falló").strip())
         try:

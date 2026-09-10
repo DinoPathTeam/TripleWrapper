@@ -320,6 +320,41 @@ impl ChecksumAlgorithm {
     }
 }
 
+/// Archive password. Never logged (redacted Debug), never persisted
+/// (skipped by serde so queue files and batch JSON can't carry secrets),
+/// and wiped from memory on drop.
+#[derive(Clone, Default)]
+pub struct Password(String);
+
+impl Password {
+    pub fn new(secret: String) -> Self {
+        Self(secret)
+    }
+
+    /// Borrow the secret for immediate use (e.g. building a `-p` arg).
+    /// Keep the borrow scope as tight as possible.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
+}
+
+impl std::fmt::Debug for Password {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("Password(***)")
+    }
+}
+
+impl Drop for Password {
+    fn drop(&mut self) {
+        use zeroize::Zeroize;
+        self.0.zeroize();
+    }
+}
+
 /// Operation request (IPC)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct OperationRequest {
@@ -333,6 +368,10 @@ pub struct OperationRequest {
     pub workspace_override: Option<PathBuf>,
     pub verify_after: bool,
     pub dry_run: bool,
+    /// Never serialized: queue/batch files must not carry secrets.
+    /// Must be re-supplied (flag or env) after every restart.
+    #[serde(skip_serializing, skip_deserializing, default)]
+    pub password: Option<Password>,
 }
 
 /// Operation response (IPC)

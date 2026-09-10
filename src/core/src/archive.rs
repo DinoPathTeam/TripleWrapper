@@ -10,6 +10,22 @@ use tracing::{debug, info};
 use crate::types::*;
 use crate::{Result, TripleWrapperError};
 
+/// Options for [`ArchiveOperator::extract`]. Grouped so the signature
+/// stays stable as features (password, resume, progress) are added.
+#[derive(Debug, Default)]
+pub struct ExtractOptions<'a> {
+    /// Only extract these archive-internal paths (empty = all).
+    pub files: Option<&'a [String]>,
+    /// 7z/pixz temp dir (`-w` / `-t`).
+    pub workdir: Option<&'a Path>,
+    /// Real-time telemetry channel.
+    pub progress_tx: Option<tokio::sync::mpsc::UnboundedSender<ProgressTelemetry>>,
+    /// 7z AES password, passed as `-p` (never logged, never persisted).
+    pub password: Option<&'a str>,
+    /// Archive-internal paths to skip (`-x!` / tar `--exclude`). For resume.
+    pub exclude: Option<&'a [String]>,
+}
+
 /// Archive operator for executing 7z/tar/pixz commands
 pub struct ArchiveOperator {
     /// Path to 7z binary
@@ -18,6 +34,36 @@ pub struct ArchiveOperator {
     tar_path: PathBuf,
     /// Path to pixz binary
     pixz_path: PathBuf,
+}
+
+/// Log a command with any `-p<secret>` argument redacted.
+/// NEVER log passwords: 7z takes them as `-pSECRET` on the command line.
+fn log_command(cmd: &Command) {
+    let prog = cmd.as_std().get_program().to_string_lossy();
+    let args: Vec<String> = cmd
+        .as_std()
+        .get_args()
+        .map(|a| {
+            let s = a.to_string_lossy();
+            if s.starts_with("-p") && s.len() > 2 {
+                "-p***".to_string()
+            } else {
+                s.into_owned()
+            }
+        })
+        .collect();
+    info!("Running: {} {}", prog, args.join(" "));
+}
+
+/// Append `-p<secret>` to a 7z command. The secret only lives in the
+/// child-process argv (same exposure as typing it in a terminal);
+/// it is never logged (see [`log_command`]) nor persisted.
+fn push_password_arg(cmd: &mut Command, password: Option<&str>) {
+    if let Some(pw) = password {
+        if !pw.is_empty() {
+            cmd.arg(format!("-p{pw}"));
+        }
+    }
 }
 
 impl ArchiveOperator {
@@ -47,19 +93,20 @@ impl ArchiveOperator {
         Ok(PathBuf::from(path))
     }
 
-    /// List archive contents
-    pub async fn list(&self, archive: &Path) -> Result<ArchiveMetadata> {
+    /// List archive contents. `password` is only needed for archives
+    /// with encrypted headers; it is passed straight to 7z, never logged.
+    pub async fn list(&self, archive: &Path, password: Option<&str>) -> Result<ArchiveMetadata> {
         let format = ArchiveFormat::from_extension(archive)
             .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
 
-        let entries = match format {
-            ArchiveFormat::SevenZ | ArchiveFormat::Zip => self.list_7z(archive).await?,
+        let (entries, encrypted) = match format {
+            ArchiveFormat::SevenZ | ArchiveFormat::Zip => self.list_7z(archive, password).await?,
             ArchiveFormat::Tar
             | ArchiveFormat::TarGz
             | ArchiveFormat::TarXz
             | ArchiveFormat::TarZst
-            | ArchiveFormat::TarBz2 => self.list_tar(archive).await?,
-            ArchiveFormat::Pixz => self.list_pixz(archive).await?,
+            | ArchiveFormat::TarBz2 => (self.list_tar(archive).await?, false),
+            ArchiveFormat::Pixz => (self.list_pixz(archive).await?, false),
         };
 
         let size = std::fs::metadata(archive)?.len();
@@ -69,15 +116,23 @@ impl ArchiveOperator {
             format,
             size,
             entries,
-            solid: false,     // TODO: detect solid archives
-            encrypted: false, // TODO: detect encryption
+            solid: false, // TODO: detect solid archives
+            encrypted,
             comment: None,
         })
     }
 
-    async fn list_7z(&self, archive: &Path) -> Result<Vec<ArchiveEntry>> {
-        let output = Command::new(&self.sevenz_path)
-            .args(["l", "-slt", "-ba", archive.to_str().unwrap()])
+    async fn list_7z(
+        &self,
+        archive: &Path,
+        password: Option<&str>,
+    ) -> Result<(Vec<ArchiveEntry>, bool)> {
+        let mut list_cmd = Command::new(&self.sevenz_path);
+        list_cmd.args(["l", "-slt", "-ba", archive.to_str().unwrap()]);
+        push_password_arg(&mut list_cmd, password);
+        log_command(&list_cmd);
+        let output = list_cmd
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
@@ -89,6 +144,7 @@ impl ArchiveOperator {
 
         let mut entries = Vec::new();
         let mut current_entry: Option<ArchiveEntry> = None;
+        let mut encrypted = false;
 
         while let Some(line) = reader.next_line().await? {
             if line.starts_with("----------") {
@@ -100,6 +156,11 @@ impl ArchiveOperator {
 
             if let Some((key, value)) = line.split_once('=') {
                 match key.trim() {
+                    "Encrypted" => {
+                        if value.trim() == "+" {
+                            encrypted = true;
+                        }
+                    }
                     "Path" => {
                         if let Some(e) = current_entry.take() {
                             entries.push(e);
@@ -147,12 +208,13 @@ impl ArchiveOperator {
             entries.push(e);
         }
 
-        Ok(entries)
+        Ok((entries, encrypted))
     }
 
     async fn list_tar(&self, archive: &Path) -> Result<Vec<ArchiveEntry>> {
         let output = Command::new(&self.tar_path)
             .args(["-tvf", archive.to_str().unwrap()])
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()?;
@@ -191,15 +253,55 @@ impl ArchiveOperator {
         self.list_tar(archive).await
     }
 
-    /// Extract archive
+    /// Heuristic encryption detection for 7z/zip.
+    ///
+    /// Returns true when `7z l` output contains `Encrypted = +`, or when
+    /// it fails with a password prompt on stderr (header-encrypted archives,
+    /// where even the file list needs the secret).
+    ///
+    /// Stdin is always null so 7z can never block waiting for input.
+    pub async fn is_encrypted(&self, archive: &Path) -> bool {
+        let out = Command::new(&self.sevenz_path)
+            .args(["l", "-slt", "-ba", archive.to_str().unwrap_or("")])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .output()
+            .await;
+        let out = match out {
+            Ok(o) => o,
+            Err(_) => return false,
+        };
+        if String::from_utf8_lossy(&out.stdout)
+            .lines()
+            .any(|l| l.trim() == "Encrypted = +")
+        {
+            return true;
+        }
+        // 7z prints the interactive prompt to stdout, errors to stderr.
+        let combined = String::from_utf8_lossy(&out.stdout).into_owned()
+            + &String::from_utf8_lossy(&out.stderr);
+        combined.contains("Enter password") || combined.contains("Wrong password")
+    }
+
+    /// Extract archive.
+    ///
+    /// * `password` – 7z AES password, passed as `-p` (never logged).
+    /// * `exclude` – archive-internal paths to skip (`-x!` / tar `--exclude`).
+    ///   Used by [`Self::resume_extract`] to skip already-extracted files.
     pub async fn extract(
         &self,
         archive: &Path,
         output_dir: &Path,
-        files: Option<&[String]>,
-        workdir: Option<&Path>,
-        progress_tx: Option<tokio::sync::mpsc::UnboundedSender<ProgressTelemetry>>,
+        opts: ExtractOptions<'_>,
     ) -> Result<OperationStats> {
+        let ExtractOptions {
+            files,
+            workdir,
+            progress_tx,
+            password,
+            exclude,
+        } = opts;
         let format = ArchiveFormat::from_extension(archive)
             .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
 
@@ -223,11 +325,17 @@ impl ArchiveOperator {
                 if let Some(wd) = workdir {
                     cmd.arg(format!("-w{}", wd.display()));
                 }
+                push_password_arg(&mut cmd, password);
                 cmd.arg(archive.to_str().unwrap());
                 cmd.arg(format!("-o{}", output_dir.display()));
                 if let Some(f) = files {
                     for file in f {
                         cmd.arg(file);
+                    }
+                }
+                if let Some(x) = exclude {
+                    for file in x {
+                        cmd.arg(format!("-x!{file}"));
                     }
                 }
                 cmd
@@ -240,6 +348,11 @@ impl ArchiveOperator {
                 let mut cmd = Command::new(&self.tar_path);
                 cmd.args(["-xf", archive.to_str().unwrap()]);
                 cmd.arg(format!("-C{}", output_dir.display()));
+                if let Some(x) = exclude {
+                    for file in x {
+                        cmd.arg(format!("--exclude={file}"));
+                    }
+                }
                 if let Some(f) = files {
                     for file in f {
                         cmd.arg(file);
@@ -258,9 +371,11 @@ impl ArchiveOperator {
             }
         };
 
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-        info!("Running: {:?}", cmd);
+        log_command(&cmd);
 
         let mut child = cmd.spawn()?;
 
@@ -321,6 +436,51 @@ impl ArchiveOperator {
         Ok(stats)
     }
 
+    /// Resume an interrupted extraction: entries already present in
+    /// `output_dir` with matching size are excluded, the rest is extracted.
+    /// Returns the stats of the resumed run plus how many files were skipped.
+    pub async fn resume_extract(
+        &self,
+        archive: &Path,
+        output_dir: &Path,
+        workdir: Option<&Path>,
+        progress_tx: Option<tokio::sync::mpsc::UnboundedSender<ProgressTelemetry>>,
+        password: Option<&str>,
+    ) -> Result<(OperationStats, usize)> {
+        let meta = self.list(archive, password).await?;
+        let mut exclude = Vec::new();
+        for entry in &meta.entries {
+            if entry.is_directory || entry.size == 0 {
+                continue;
+            }
+            let dest = output_dir.join(&entry.path);
+            if let Ok(md) = std::fs::metadata(&dest) {
+                if md.len() == entry.size {
+                    exclude.push(entry.path.clone());
+                }
+            }
+        }
+        let skipped = exclude.len();
+        let stats = self
+            .extract(
+                archive,
+                output_dir,
+                ExtractOptions {
+                    workdir,
+                    progress_tx,
+                    password,
+                    exclude: if exclude.is_empty() {
+                        None
+                    } else {
+                        Some(&exclude)
+                    },
+                    ..Default::default()
+                },
+            )
+            .await?;
+        Ok((stats, skipped))
+    }
+
     /// Create/modify archive (add files)
     pub async fn add(
         &self,
@@ -329,6 +489,7 @@ impl ArchiveOperator {
         compression_level: u8,
         workdir: Option<&Path>,
         _progress_tx: Option<tokio::sync::mpsc::UnboundedSender<ProgressTelemetry>>,
+        password: Option<&str>,
     ) -> Result<OperationStats> {
         let format = ArchiveFormat::from_extension(archive)
             .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
@@ -353,6 +514,11 @@ impl ArchiveOperator {
                 if let Some(wd) = workdir {
                     cmd.arg(format!("-w{}", wd.display()));
                 }
+                push_password_arg(&mut cmd, password);
+                if password.is_some_and(|p| !p.is_empty()) {
+                    // Also encrypt headers (file names), not just contents.
+                    cmd.arg("-mhe=on");
+                }
                 cmd.arg(archive.to_str().unwrap());
                 for file in files {
                     cmd.arg(file);
@@ -365,6 +531,7 @@ impl ArchiveOperator {
                 if let Some(wd) = workdir {
                     cmd.arg(format!("-w{}", wd.display()));
                 }
+                push_password_arg(&mut cmd, password);
                 cmd.arg(archive.to_str().unwrap());
                 for file in files {
                     cmd.arg(file);
@@ -419,9 +586,11 @@ impl ArchiveOperator {
             }
         };
 
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
 
-        info!("Running: {:?}", cmd);
+        log_command(&cmd);
 
         let mut child = cmd.spawn()?;
 
@@ -457,6 +626,7 @@ impl ArchiveOperator {
         archive: &Path,
         files: &[String],
         workdir: Option<&Path>,
+        password: Option<&str>,
     ) -> Result<OperationStats> {
         let format = ArchiveFormat::from_extension(archive)
             .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
@@ -471,6 +641,7 @@ impl ArchiveOperator {
                 if let Some(wd) = workdir {
                     cmd.arg(format!("-w{}", wd.display()));
                 }
+                push_password_arg(&mut cmd, password);
                 cmd.arg(archive.to_str().unwrap());
                 for file in files {
                     cmd.arg(file);
@@ -484,7 +655,11 @@ impl ArchiveOperator {
             }
         };
 
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        cmd.stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped());
+
+        log_command(&cmd);
 
         let mut child = cmd.spawn()?;
         let status = child.wait().await?;
@@ -506,7 +681,7 @@ impl ArchiveOperator {
     }
 
     /// Test archive integrity
-    pub async fn test(&self, archive: &Path) -> Result<bool> {
+    pub async fn test(&self, archive: &Path, password: Option<&str>) -> Result<bool> {
         let format = ArchiveFormat::from_extension(archive)
             .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
 
@@ -514,6 +689,7 @@ impl ArchiveOperator {
         let mut cmd = if matches!(format, ArchiveFormat::SevenZ | ArchiveFormat::Zip) {
             let mut cmd = Command::new(&self.sevenz_path);
             cmd.args(["t", archive_str]);
+            push_password_arg(&mut cmd, password);
             cmd
         } else {
             let mut cmd = Command::new(&self.tar_path);
@@ -521,6 +697,7 @@ impl ArchiveOperator {
             cmd
         };
 
+        cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::null()).stderr(Stdio::null());
 
         let status = cmd.status().await?;
