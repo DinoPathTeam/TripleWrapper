@@ -318,6 +318,48 @@ class CoreBridge(GObject.Object):
             raise RuntimeError((proc.stderr or proc.stdout or "mount falló").strip())
         return str(json.loads(proc.stdout).get("mount_point", ""))
 
+    def create_archive(self, archive: str, files: list[str], level: int = 5,
+                         password: str | None = None) -> dict:
+        """Run `create` and return stats. Password via child env only."""
+        import os
+
+        binary = self._resolve_bin()
+        if not binary:
+            raise FileNotFoundError("triplewrapper-core no encontrado")
+        cmd = [binary, "create", "-a", archive, "--level", str(level)]
+        for f in files:
+            cmd += ["-f", f]
+        env = dict(os.environ)
+        if password:
+            env["TRIPLEWRAPPER_PASSWORD"] = password
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                              check=False, env=env)
+        if proc.returncode != 0:
+            raise RuntimeError((proc.stderr or proc.stdout or "create falló").strip())
+        data: dict = json.loads(proc.stdout or "{}")
+        return data
+
+    def delete_files(self, archive: str, files: list[str],
+                     password: str | None = None) -> dict:
+        """Run `delete` and return stats. Password via child env only."""
+        import os
+
+        binary = self._resolve_bin()
+        if not binary:
+            raise FileNotFoundError("triplewrapper-core no encontrado")
+        cmd = [binary, "delete", "-a", archive]
+        for f in files:
+            cmd += ["-f", f]
+        env = dict(os.environ)
+        if password:
+            env["TRIPLEWRAPPER_PASSWORD"] = password
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=300,
+                              check=False, env=env)
+        if proc.returncode != 0:
+            raise RuntimeError((proc.stderr or proc.stdout or "delete falló").strip())
+        data: dict = json.loads(proc.stdout or "{}")
+        return data
+
     def queue_add(self, archive: str, operation: str = "extract", priority: str = "normal",
                   output: str | None = None, password: str | None = None) -> int:
         """Run `queue add` and return numeric id.

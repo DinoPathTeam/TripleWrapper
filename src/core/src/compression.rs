@@ -59,6 +59,18 @@ pub fn detect_format(path: &Path) -> Result<ArchiveFormat> {
         .ok_or_else(|| crate::TripleWrapperError::InvalidFormat("Unknown archive format".into()))
 }
 
+/// Resolve the format preferring the extension, falling back to magic
+/// bytes. Extension-first matters: `pixz` and `xz` share magic, and the
+/// user's explicit suffix is the best signal. Magic rescues extensionless
+/// or oddly-suffixed files (e.g. a tarball named `backup.bin`).
+/// A positively wrong suffix (zip containing tar) still wins by design.
+pub fn resolve_format(path: &Path) -> Result<ArchiveFormat> {
+    if let Some(fmt) = ArchiveFormat::from_extension(path) {
+        return Ok(fmt);
+    }
+    detect_format(path)
+}
+
 /// Get optimal compression level for format
 pub fn optimal_compression_level(format: ArchiveFormat, level: u8) -> u8 {
     match format {

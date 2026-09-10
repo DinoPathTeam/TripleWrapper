@@ -7,6 +7,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tracing::{debug, info};
 
+use crate::compression::resolve_format;
 use crate::types::*;
 use crate::{Result, TripleWrapperError};
 
@@ -98,11 +99,34 @@ impl ArchiveOperator {
         Ok(PathBuf::from(path))
     }
 
+    /// Fail fast with an actionable message when an optional tool (like
+    /// `pixz`) is missing, instead of a bare spawn `NotFound` error.
+    /// Accepts absolute paths (checked directly) and bare names (`which`).
+    fn require_tool(path: &Path, name: &str) -> Result<()> {
+        let present = if path.is_absolute() {
+            path.exists()
+        } else {
+            std::process::Command::new("which")
+                .arg(name)
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .map(|s| s.success())
+                .unwrap_or(false)
+        };
+        if present {
+            Ok(())
+        } else {
+            Err(TripleWrapperError::ToolNotFound(format!(
+                "{name} binary not found: install the '{name}' package, or use .tar.xz instead"
+            )))
+        }
+    }
+
     /// List archive contents. `password` is only needed for archives
     /// with encrypted headers; it is passed straight to 7z, never logged.
     pub async fn list(&self, archive: &Path, password: Option<&str>) -> Result<ArchiveMetadata> {
-        let format = ArchiveFormat::from_extension(archive)
-            .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
+        let format = resolve_format(archive)?;
 
         let (entries, encrypted) = match format {
             ArchiveFormat::SevenZ | ArchiveFormat::Zip => self.list_7z(archive, password).await?,
@@ -307,8 +331,7 @@ impl ArchiveOperator {
             password,
             exclude,
         } = opts;
-        let format = ArchiveFormat::from_extension(archive)
-            .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
+        let format = resolve_format(archive)?;
 
         let start = Instant::now();
         let mut stats = OperationStats {
@@ -366,6 +389,7 @@ impl ArchiveOperator {
                 cmd
             }
             ArchiveFormat::Pixz => {
+                Self::require_tool(&self.pixz_path, "pixz")?;
                 let mut cmd = Command::new(&self.pixz_path);
                 cmd.args(["-d", "-k"]); // decompress, keep original
                 if let Some(wd) = workdir {
@@ -381,7 +405,15 @@ impl ArchiveOperator {
 
         log_command(&cmd);
 
-        let mut child = cmd.spawn()?;
+        let mut child = cmd.spawn().map_err(|e| {
+            if e.kind() == std::io::ErrorKind::NotFound {
+                TripleWrapperError::ToolNotFound(
+                    "failed to launch compression tool (is it installed?)".into(),
+                )
+            } else {
+                TripleWrapperError::Io(e)
+            }
+        })?;
 
         // Monitor progress from stderr
         let mut bytes_written = 0u64;
@@ -495,8 +527,7 @@ impl ArchiveOperator {
         _progress_tx: Option<tokio::sync::mpsc::UnboundedSender<ProgressTelemetry>>,
         password: Option<&str>,
     ) -> Result<OperationStats> {
-        let format = ArchiveFormat::from_extension(archive)
-            .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
+        let format = resolve_format(archive)?;
 
         let start = Instant::now();
         let mut stats = OperationStats {
@@ -514,7 +545,7 @@ impl ArchiveOperator {
         let mut cmd = match format {
             ArchiveFormat::SevenZ => {
                 let mut cmd = Command::new(&self.sevenz_path);
-                cmd.args(["a", "-mx", &compression_level.to_string()]);
+                cmd.args(["a", &format!("-mx{compression_level}")]);
                 if let Some(wd) = workdir {
                     cmd.arg(format!("-w{}", wd.display()));
                 }
@@ -531,7 +562,7 @@ impl ArchiveOperator {
             }
             ArchiveFormat::Zip => {
                 let mut cmd = Command::new(&self.sevenz_path);
-                cmd.args(["a", "-tzip", "-mx", &compression_level.to_string()]);
+                cmd.args(["a", "-tzip", &format!("-mx{compression_level}")]);
                 if let Some(wd) = workdir {
                     cmd.arg(format!("-w{}", wd.display()));
                 }
@@ -620,6 +651,7 @@ impl ArchiveOperator {
             return Err(TripleWrapperError::CompressionFailed(stderr));
         }
 
+        stats.bytes_written = std::fs::metadata(archive).map(|m| m.len()).unwrap_or(0);
         Ok(stats)
     }
 
@@ -631,8 +663,7 @@ impl ArchiveOperator {
         workdir: Option<&Path>,
         password: Option<&str>,
     ) -> Result<OperationStats> {
-        let format = ArchiveFormat::from_extension(archive)
-            .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
+        let format = resolve_format(archive)?;
 
         let start = Instant::now();
         let mut stats = OperationStats::default();
@@ -679,13 +710,13 @@ impl ArchiveOperator {
             return Err(TripleWrapperError::CompressionFailed(stderr));
         }
 
+        stats.bytes_written = std::fs::metadata(archive).map(|m| m.len()).unwrap_or(0);
         Ok(stats)
     }
 
     /// Test archive integrity
     pub async fn test(&self, archive: &Path, password: Option<&str>) -> Result<bool> {
-        let format = ArchiveFormat::from_extension(archive)
-            .ok_or_else(|| TripleWrapperError::InvalidFormat("Unknown archive format".into()))?;
+        let format = resolve_format(archive)?;
 
         let archive_str = archive.to_str().unwrap();
         let mut cmd = if matches!(format, ArchiveFormat::SevenZ | ArchiveFormat::Zip) {
@@ -858,6 +889,91 @@ mod tests {
             .unwrap();
         assert_eq!(skipped, 1, "f1.txt should have been skipped");
         assert!(out.join("f2.txt").exists(), "f2.txt should be restored");
+    }
+
+    #[tokio::test]
+    async fn test_resolve_format_falls_back_to_magic() {
+        use crate::compression::resolve_format;
+        use crate::types::ArchiveFormat;
+
+        let dir = tempfile::tempdir().unwrap();
+        // Real gzip content with a misleading name and no known suffix.
+        let src = dir.path().join("real.tar.gz");
+        let status = std::process::Command::new("tar")
+            .args(["-czf"])
+            .arg(&src)
+            .arg("-C")
+            .arg(dir.path())
+            .arg(".")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        if !status.map(|s| s.success()).unwrap_or(false) {
+            eprintln!("SKIP: tar not available");
+            return;
+        }
+        let misnamed = dir.path().join("backup.bin");
+        std::fs::copy(&src, &misnamed).unwrap();
+        assert_eq!(resolve_format(&misnamed).unwrap(), ArchiveFormat::TarGz);
+    }
+
+    #[tokio::test]
+    async fn test_create_delete_roundtrip_with_password() {
+        let Some(op) = sevenz() else { return };
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("a.txt"), b"alpha").unwrap();
+        std::fs::write(dir.path().join("b.txt"), b"beta").unwrap();
+        let archive = dir.path().join("roundtrip.7z");
+
+        op.add(
+            &archive,
+            &[dir.path().join("a.txt"), dir.path().join("b.txt")],
+            5,
+            None,
+            None,
+            Some("R0undtrip"),
+        )
+        .await
+        .unwrap();
+
+        let meta = op.list(&archive, Some("R0undtrip")).await.unwrap();
+        assert!(meta.encrypted);
+        assert_eq!(meta.entries.len(), 2);
+
+        op.delete(&archive, &["b.txt".to_string()], None, Some("R0undtrip"))
+            .await
+            .unwrap();
+        let meta = op.list(&archive, Some("R0undtrip")).await.unwrap();
+        assert_eq!(meta.entries.len(), 1);
+        assert!(meta.entries[0].path.contains("a.txt"));
+    }
+
+    #[tokio::test]
+    async fn test_pixz_missing_gives_actionable_error() {
+        // No fixture content needed: the tool check runs before any I/O.
+        if std::process::Command::new("which")
+            .arg("pixz")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+        {
+            eprintln!("SKIP: pixz is installed, error path unreachable");
+            return;
+        }
+        let Some(op) = sevenz() else { return };
+        let dir = tempfile::tempdir().unwrap();
+        let fake = dir.path().join("x.tar.pixz");
+        std::fs::write(&fake, b"not really pixz").unwrap();
+        let out = dir.path().join("out");
+        let err = op
+            .extract(&fake, &out, ExtractOptions::default())
+            .await
+            .unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(
+            msg.contains("pixz"),
+            "error should name the missing tool, got: {msg}"
+        );
     }
 
     #[tokio::test]

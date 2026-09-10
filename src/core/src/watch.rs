@@ -99,9 +99,9 @@ where
             })?;
         streams.push(stream);
     }
-    let [mut added, mut removed] = streams.try_into().map_err(|_| {
-        TripleWrapperError::Internal("UDisks2 subscription failed".into())
-    })?;
+    let [mut added, mut removed] = streams
+        .try_into()
+        .map_err(|_| TripleWrapperError::Internal("UDisks2 subscription failed".into()))?;
     loop {
         let msg = tokio::select! {
             msg = added.next() => msg,

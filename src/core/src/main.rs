@@ -96,6 +96,39 @@ enum Commands {
         password: Option<String>,
     },
 
+    /// Create an archive from files (format from archive suffix)
+    Create {
+        /// Output archive path, e.g. backup.7z (suffix selects format)
+        #[arg(short, long)]
+        archive: String,
+
+        /// Files/dirs to add (repeatable)
+        #[arg(short, long)]
+        files: Vec<PathBuf>,
+
+        /// Compression level (format-capped)
+        #[arg(long, default_value_t = 5)]
+        level: u8,
+
+        /// Archive password for 7z/zip (prefer TRIPLEWRAPPER_PASSWORD env var)
+        #[arg(long)]
+        password: Option<String>,
+    },
+
+    /// Delete entries from a 7z/zip archive
+    Delete {
+        #[arg(short, long)]
+        archive: String,
+
+        /// Archive-internal paths to delete (repeatable)
+        #[arg(short, long)]
+        files: Vec<String>,
+
+        /// Archive password (prefer TRIPLEWRAPPER_PASSWORD env var)
+        #[arg(long)]
+        password: Option<String>,
+    },
+
     /// Run DBus service
     Serve,
 
@@ -308,6 +341,17 @@ async fn main() -> Result<()> {
         Commands::Test { archive, password } => {
             cmd_test(archive, resolve_password(password), cli.json).await
         }
+        Commands::Create {
+            archive,
+            files,
+            level,
+            password,
+        } => cmd_create(archive, files, level, resolve_password(password), cli.json).await,
+        Commands::Delete {
+            archive,
+            files,
+            password,
+        } => cmd_delete(archive, files, resolve_password(password), cli.json).await,
         Commands::Serve => cmd_serve().await,
         Commands::Run {
             archive,
@@ -732,6 +776,99 @@ async fn cmd_test(archive: String, password: Option<Password>, json: bool) -> Re
         } else {
             println!("✗ Archive integrity FAILED");
             std::process::exit(1);
+        }
+    }
+    Ok(())
+}
+
+async fn cmd_create(
+    archive: String,
+    files: Vec<PathBuf>,
+    level: u8,
+    password: Option<Password>,
+    json: bool,
+) -> Result<()> {
+    use triplewrapper_core::compression::optimal_compression_level;
+
+    if files.is_empty() {
+        return Err(TripleWrapperError::Internal(
+            "create needs at least one --files entry".into(),
+        ));
+    }
+    let operator = ArchiveOperator::new()?;
+    let archive_path = PathBuf::from(archive);
+    let format = triplewrapper_core::compression::resolve_format(&archive_path).map_err(|_| {
+        TripleWrapperError::InvalidFormat(
+            "cannot infer format from archive suffix (try .7z/.zip/.tar.gz/...)".into(),
+        )
+    })?;
+    let stats = operator
+        .add(
+            &archive_path,
+            &files,
+            optimal_compression_level(format, level),
+            None,
+            None,
+            password_str(password.as_ref()),
+        )
+        .await?;
+    // Record what we just produced in the local integrity log.
+    let checksum = triplewrapper_core::integrity::IntegrityDb::open()?
+        .record(&archive_path, "create")
+        .await
+        .map(|r| r.blake3)
+        .unwrap_or_default();
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&stats)?);
+    } else {
+        println!(
+            "Created {} ({}, {} files)",
+            archive_path.display(),
+            format_bytes(stats.bytes_written),
+            files.len()
+        );
+        if !checksum.is_empty() {
+            println!("BLAKE3: {checksum}");
+        }
+    }
+    Ok(())
+}
+
+async fn cmd_delete(
+    archive: String,
+    files: Vec<String>,
+    password: Option<Password>,
+    json: bool,
+) -> Result<()> {
+    if files.is_empty() {
+        return Err(TripleWrapperError::Internal(
+            "delete needs at least one --files entry".into(),
+        ));
+    }
+    let operator = ArchiveOperator::new()?;
+    let archive_path = PathBuf::from(archive);
+    let stats = operator
+        .delete(&archive_path, &files, None, password_str(password.as_ref()))
+        .await?;
+    // The archive changed: refresh its integrity record.
+    let checksum = triplewrapper_core::integrity::IntegrityDb::open()?
+        .record(&archive_path, "delete")
+        .await
+        .map(|r| r.blake3)
+        .unwrap_or_default();
+
+    if json {
+        println!("{}", serde_json::to_string_pretty(&stats)?);
+    } else {
+        println!(
+            "Deleted {} entries from {} in {}",
+            files.len(),
+            archive_path.display(),
+            format_duration(stats.duration)
+        );
+        if !checksum.is_empty() {
+            println!("New BLAKE3: {checksum}");
         }
     }
     Ok(())
