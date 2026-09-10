@@ -54,3 +54,8 @@ def _human(n: int) -> str:
             return f"{value:.1f} {unit}"
         value /= 1024
     return f"{value:.1f} PB"
+
+
+def human_size(n: int) -> str:
+    """Public human-readable bytes (shared with views)."""
+    return _human(n)

@@ -100,6 +100,7 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
 
         self._analysis.connect("start-requested", self.on_start_requested)
         self._analysis.connect("enqueue-requested", self.on_enqueue_requested)
+        self._analysis.connect("mount-requested", self.on_mount_requested)
         self._analysis.connect("back-requested", lambda *_: self.go_welcome())
 
         self._progress.connect("done", self.on_done)
@@ -117,6 +118,8 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
     def go_analysis(self) -> None:
         self._stack.set_visible_child_name("analysis")
         self.refresh_queue()
+        self.refresh_devices()
+        self.refresh_devices()
 
     def go_progress(self) -> None:
         self._stack.set_visible_child_name("progress")
@@ -268,6 +271,37 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
                     error_message=entry["error_message"],
                 ))
             GLib.idle_add(self._analysis.set_queue_items, items)
+        except Exception:  # noqa: BLE001 - best-effort background refresh
+            return
+
+    def on_mount_requested(self, view, dev_path: str) -> None:
+        import threading
+
+        threading.Thread(target=self._do_mount, args=(dev_path,), daemon=True).start()
+
+    def _do_mount(self, dev_path: str) -> None:
+        from gi.repository import GLib
+
+        try:
+            mount_point = self._bridge.device_mount(dev_path)
+            GLib.idle_add(self.show_toast, f"Montado en {mount_point} — ya puedes usarlo")
+            GLib.idle_add(self.refresh_devices)
+        except Exception as exc:  # noqa: BLE001
+            GLib.idle_add(
+                self.show_toast, f"No se pudo montar: {exc}", Adw.ToastPriority.HIGH,
+            )
+
+    def refresh_devices(self) -> None:
+        import threading
+
+        threading.Thread(target=self._do_refresh_devices, daemon=True).start()
+
+    def _do_refresh_devices(self) -> None:
+        from gi.repository import GLib
+
+        try:
+            devices = self._bridge.devices_list()
+            GLib.idle_add(self._analysis.set_devices, devices)
         except Exception:  # noqa: BLE001 - best-effort background refresh
             return
 

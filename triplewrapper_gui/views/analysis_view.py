@@ -8,7 +8,7 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gdk, GObject, Gtk
 
-from ..core.models import AnalysisReport
+from ..core.models import AnalysisReport, human_size
 from ..widgets.queue_panel import QueueItem, QueuePanelWidget
 from ..widgets.storage_donut import StorageDonut
 
@@ -21,6 +21,7 @@ class AnalysisView(Gtk.Box):
         "start-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "enqueue-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "back-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
+        "mount-requested": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
     }
 
     def __init__(self) -> None:
@@ -132,6 +133,32 @@ class AnalysisView(Gtk.Box):
         ws_box.append(self._integrity_label)
 
         self.append(self._workspace_card)
+
+        # Unmounted devices card (USB-HDD/SSD plugged but not mounted)
+        devices_card = Gtk.Frame()
+        devices_card.add_css_class("card")
+        dev_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        dev_box.set_margin_top(16)
+        dev_box.set_margin_bottom(16)
+        dev_box.set_margin_start(16)
+        dev_box.set_margin_end(16)
+        devices_card.set_child(dev_box)
+
+        dev_title = Gtk.Label(label="Dispositivos sin montar")
+        dev_title.add_css_class("heading")
+        dev_title.set_halign(Gtk.Align.START)
+        dev_box.append(dev_title)
+
+        dev_hint = Gtk.Label(label="¿Conectaste un USB y no aparece arriba? Móntalo aquí.")
+        dev_hint.add_css_class("dim-label")
+        dev_hint.set_halign(Gtk.Align.START)
+        dev_hint.set_wrap(True)
+        dev_box.append(dev_hint)
+
+        self._devices_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        dev_box.append(self._devices_box)
+
+        self.append(devices_card)
 
         # Action bar
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -245,6 +272,35 @@ class AnalysisView(Gtk.Box):
 
     def set_integrity_text(self, text: str) -> None:
         self._integrity_label.set_label(f"Integridad local: {text}")
+
+    def set_devices(self, devices: list[dict]) -> None:
+        """Show unmounted devices, each with its Montar button."""
+        for child in list(self._devices_box):
+            self._devices_box.remove(child)
+        if not devices:
+            empty = Gtk.Label(label="Nada por montar — todo lo conectado ya está disponible.")
+            empty.add_css_class("dim-label")
+            empty.set_halign(Gtk.Align.START)
+            self._devices_box.append(empty)
+            return
+        for dev in devices:
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+            info = f"{dev.get('dev_path', '?')} · {dev.get('fstype', '?')} · {human_size(dev.get('size_bytes', 0))}"
+            if dev.get("removable"):
+                info += " · extraíble"
+            label = Gtk.Label(label=info)
+            label.set_halign(Gtk.Align.START)
+            label.set_hexpand(True)
+            row.append(label)
+            mount_btn = Gtk.Button(label="Montar")
+            mount_btn.add_css_class("pill")
+            dev_path = dev.get("dev_path", "")
+            mount_btn.connect(
+                "clicked",
+                lambda _b, d=dev_path: self.emit("mount-requested", d),
+            )
+            row.append(mount_btn)
+            self._devices_box.append(row)
 
     def set_queue_items(self, items: list[QueueItem]) -> None:
         self._queue_panel.set_items(items)

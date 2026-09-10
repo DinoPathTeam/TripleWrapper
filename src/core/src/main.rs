@@ -126,6 +126,23 @@ enum Commands {
         resume: bool,
     },
 
+    /// List unmounted external devices (USB-HDD/SSD ready to mount)
+    Devices,
+
+    /// Mount an unmounted device via UDisks2 (desktop handles auth)
+    Mount {
+        /// Device path from `devices`, e.g. /dev/sdb1
+        #[arg(short, long)]
+        device: String,
+    },
+
+    /// Unmount a device via UDisks2
+    Unmount {
+        /// Device path, e.g. /dev/sdb1
+        #[arg(short, long)]
+        device: String,
+    },
+
     /// Queue management commands
     #[command(subcommand)]
     Queue(QueueCommands),
@@ -306,6 +323,9 @@ async fn main() -> Result<()> {
             )
             .await
         }
+        Commands::Devices => cmd_devices(cli.json).await,
+        Commands::Mount { device } => cmd_mount(device, cli.json).await,
+        Commands::Unmount { device } => cmd_unmount(device, cli.json).await,
         Commands::Queue(cmd) => cmd_queue(cmd, cli.json).await,
         Commands::Integrity(cmd) => cmd_integrity(cmd, cli.json).await,
     }
@@ -542,7 +562,7 @@ async fn cmd_run(
         }
         _ => {
             let out_dir = output.map(PathBuf::from).unwrap_or(workspace_path);
-            let _ = std::fs::create_dir_all(&out_dir);
+            triplewrapper_core::mount::ensure_workspace_ready(&out_dir)?;
             let (tx, mut rx) = mpsc::unbounded_channel();
             let archive_clone = archive_path.clone();
             let out_clone = out_dir.clone();
@@ -646,6 +666,8 @@ async fn cmd_extract(
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::env::current_dir().unwrap());
     let archive_path = PathBuf::from(archive);
+    // Fail fast with a clear message instead of a cryptic 7z error mid-run.
+    triplewrapper_core::mount::ensure_workspace_ready(&out_dir)?;
 
     info!(
         "Extracting {} to {}",
@@ -706,6 +728,69 @@ async fn cmd_test(archive: String, password: Option<Password>, json: bool) -> Re
             println!("✗ Archive integrity FAILED");
             std::process::exit(1);
         }
+    }
+    Ok(())
+}
+
+async fn cmd_devices(json: bool) -> Result<()> {
+    use triplewrapper_core::mount::list_unmounted;
+
+    let devs = list_unmounted()?;
+    if json {
+        println!("{}", serde_json::to_string(&devs)?);
+    } else if devs.is_empty() {
+        println!("No unmounted devices. Plug a drive in, or mount it in Files first.");
+    } else {
+        println!("{:<14} {:<10} {:>10}  Removable", "Device", "FS", "Size");
+        println!("{}", "-".repeat(60));
+        for d in &devs {
+            println!(
+                "{:<14} {:<10} {:>10}  {}",
+                d.dev_path,
+                d.fstype,
+                format_bytes(d.size_bytes),
+                if d.removable { "yes" } else { "no" },
+            );
+        }
+    }
+    Ok(())
+}
+
+async fn cmd_mount(device: String, json: bool) -> Result<()> {
+    use triplewrapper_core::mount;
+    use triplewrapper_core::mount::ensure_workspace_ready;
+
+    let mount_point = mount::mount(&device)?;
+    // Prove we can actually use it before reporting success.
+    ensure_workspace_ready(&mount_point)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(&serde_json::json!({
+                "device": device,
+                "mount_point": mount_point,
+            }))?
+        );
+    } else {
+        println!("Mounted {} at {}", device, mount_point.display());
+    }
+    Ok(())
+}
+
+async fn cmd_unmount(device: String, json: bool) -> Result<()> {
+    use triplewrapper_core::mount::unmount;
+
+    unmount(&device)?;
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(&serde_json::json!({
+                "device": device,
+                "status": "unmounted",
+            }))?
+        );
+    } else {
+        println!("Unmounted {}", device);
     }
     Ok(())
 }
@@ -1200,6 +1285,11 @@ async fn cmd_queue_start(queue: &mut OperationQueue, workers: usize, _json: bool
             async move {
                 // Password lives only in memory (never persisted, see serde skip).
                 let pw = item.request.password.as_ref().map(|p| p.expose());
+                // The external-cache dir must exist AND be writable before
+                // gigabytes start flowing through 7z's `-w` flag.
+                if let Some(wd) = item.request.workspace_override.as_deref() {
+                    triplewrapper_core::mount::ensure_workspace_ready(wd)?;
+                }
                 // Process the queue item based on its operation type
                 match item.request.op_type {
                     OperationType::Extract => {

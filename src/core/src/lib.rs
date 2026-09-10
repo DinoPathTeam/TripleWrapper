@@ -12,6 +12,7 @@ pub mod error;
 pub mod integrity;
 #[cfg(not(test))]
 pub mod ipc;
+pub mod mount;
 pub mod progress;
 pub mod queue;
 pub mod types;

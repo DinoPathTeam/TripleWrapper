@@ -253,6 +253,43 @@ class CoreBridge(GObject.Object):
         data = json.loads(proc.stdout or "[]")
         return data if isinstance(data, list) else []
 
+    def devices_list(self) -> list[dict]:
+        """Run `devices --json`: unmounted partitions ready to mount.
+
+        Sync, call in a worker thread. Returns [] when udisksctl/lsblk
+        are missing (e.g. minimal containers) instead of raising.
+        """
+        binary = self._resolve_bin()
+        if not binary:
+            return []
+        try:
+            proc = subprocess.run(
+                [binary, "-j", "devices"],
+                capture_output=True, text=True, timeout=30, check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if proc.returncode != 0:
+            return []
+        try:
+            data = json.loads(proc.stdout or "[]")
+        except json.JSONDecodeError:
+            return []
+        return data if isinstance(data, list) else []
+
+    def device_mount(self, dev_path: str) -> str:
+        """Mount via UDisks2. Returns mount point. Raises RuntimeError."""
+        binary = self._resolve_bin()
+        if not binary:
+            raise FileNotFoundError("triplewrapper-core no encontrado")
+        proc = subprocess.run(
+            [binary, "-j", "mount", "-d", dev_path],
+            capture_output=True, text=True, timeout=120, check=False,
+        )
+        if proc.returncode != 0:
+            raise RuntimeError((proc.stderr or proc.stdout or "mount falló").strip())
+        return str(json.loads(proc.stdout).get("mount_point", ""))
+
     def queue_add(self, archive: str, operation: str = "extract", priority: str = "normal",
                   output: str | None = None, password: str | None = None) -> int:
         """Run `queue add` and return numeric id.

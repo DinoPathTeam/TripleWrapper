@@ -18,7 +18,6 @@
     "--filesystem=/mnt:rw",
     "--filesystem=/media:rw",
     "--talk-name=org.freedesktop.UDisks2",
-    "--talk-name=org.freedesktop.login1",
     "--env=GTK_THEME=Adwaita:dark"
   ],
   "build-options": {
