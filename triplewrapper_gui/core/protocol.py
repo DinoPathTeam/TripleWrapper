@@ -64,6 +64,7 @@ def parse_event_line(line: str) -> tuple[str, dict] | None:
       {"kind": "analysis", "data": {...}}
       {"kind": "tick", "data": {...}}
       {"kind": "error", "message": "..."}
+      {"kind": "device-added"} / {"kind": "device-removed"}
     """
     line = line.strip()
     if not line.startswith("{"):
@@ -73,7 +74,7 @@ def parse_event_line(line: str) -> tuple[str, dict] | None:
     except json.JSONDecodeError:
         return None
     kind = payload.get("kind")
-    if kind in ("analysis", "tick", "error"):
+    if kind in ("analysis", "tick", "error", "device-added", "device-removed"):
         return kind, payload
     return None
 

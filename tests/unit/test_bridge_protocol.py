@@ -38,6 +38,11 @@ def test_parse_invalid_lines():
     assert parse_event_line("") is None
 
 
+def test_parse_device_events():
+    assert parse_event_line('{"kind": "device-added"}')[0] == "device-added"
+    assert parse_event_line('{"kind": "device-removed"}')[0] == "device-removed"
+
+
 def test_validate_archive_path(tmp_path):
     ok, _ = validate_archive_path("")
     assert not ok

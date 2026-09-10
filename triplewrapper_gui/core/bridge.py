@@ -25,6 +25,7 @@ class CoreBridge(GObject.Object):
         "analysis-failed": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
         "progress-tick": (GObject.SignalFlags.RUN_FIRST, None, (object,)),
         "operation-failed": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
+        "devices-changed": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
     }
 
     def __init__(self, core_bin: str | None = None) -> None:
@@ -35,6 +36,8 @@ class CoreBridge(GObject.Object):
         self._cancelled = False
         self._core_bin = core_bin
         self._password: str | None = None
+        self._watch_proc: Gio.Subprocess | None = None
+        self._watch_thread: threading.Thread | None = None
 
     # ----------------------------------------------------------------- API
     def set_archive_path(self, path: str) -> None:
@@ -179,23 +182,30 @@ class CoreBridge(GObject.Object):
         )
 
     # --------------------------------------------------------- Subprocess API
-    def _spawn(self, argv: list[str], extra_env: dict | None = None) -> None:
+    def _spawn(self, argv: list[str], extra_env: dict | None = None,
+               proc_slot: str = "_proc", silent_errors: bool = False) -> None:
         """Spawn the Rust core and stream JSON events.
 
         Secrets (password) travel via child env only, never argv.
+        `proc_slot` selects which handle tracks the child so the
+        long-lived watch subprocess never clobbers operation cancel.
+        `silent_errors` keeps background watchers from hijacking the UI
+        (polling refresh remains as fallback).
         """
         launcher = Gio.SubprocessLauncher()
         launcher.set_flags(Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_SILENCE)
         for key, value in (extra_env or {}).items():
             launcher.setenv(key, value, True)
-        self._proc = launcher.spawnv(argv)
-        stdout = self._proc.get_stdout_pipe()
+        proc = launcher.spawnv(argv)
+        setattr(self, proc_slot, proc)
+        stdout = proc.get_stdout_pipe()
+        watched = proc_slot != "_proc"
 
         def reader() -> None:
             try:
                 data_stream = Gio.DataInputStream.new(stdout)
                 while True:
-                    if self._cancelled:
+                    if not watched and self._cancelled:
                         return
                     line, _ = data_stream.read_line_utf8()
                     if line is None:
@@ -205,10 +215,15 @@ class CoreBridge(GObject.Object):
                         continue
                     self._dispatch(parsed[0], parsed[1])
             except Exception as exc:  # noqa: BLE001
-                GLib.idle_add(self.emit, "operation-failed", str(exc))
+                if not silent_errors:
+                    GLib.idle_add(self.emit, "operation-failed", str(exc))
 
-        self._reader_thread = threading.Thread(target=reader, daemon=True)
-        self._reader_thread.start()
+        thread = threading.Thread(target=reader, daemon=True)
+        if watched:
+            self._watch_thread = thread
+        else:
+            self._reader_thread = thread
+        thread.start()
 
     def _dispatch(self, kind: str, payload: dict) -> None:
         if kind == "analysis":
@@ -219,6 +234,19 @@ class CoreBridge(GObject.Object):
             GLib.idle_add(self.emit, "progress-tick", tick)
         elif kind == "error":
             GLib.idle_add(self.emit, "operation-failed", payload.get("message", "Error desconocido"))
+        elif kind in ("device-added", "device-removed"):
+            GLib.idle_add(self.emit, "devices-changed", kind)
+
+    def watch_devices(self) -> None:
+        """Subscribe to UDisks2 hotplug events (runs until cancelled).
+
+        Failures (no system bus, no udisksctl) are silent: polling via
+        refresh_devices() remains as fallback. Call once per window.
+        """
+        binary = self._resolve_bin()
+        if not binary:
+            return
+        self._spawn([binary, "watch"], proc_slot="_watch_proc", silent_errors=True)
 
     # --------------------------------------------------------- Integrity API
     def integrity_last(self, archive: str) -> dict | None:

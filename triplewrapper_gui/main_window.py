@@ -110,6 +110,8 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         self._bridge.connect("analysis-failed", self.on_analysis_failed)
         self._bridge.connect("progress-tick", self.on_progress_tick)
         self._bridge.connect("operation-failed", self.on_operation_failed)
+        self._bridge.connect("devices-changed", self.on_devices_changed)
+        self._bridge.watch_devices()
 
     # ------------------------------------------------------------- Navigation
     def go_welcome(self) -> None:
@@ -290,6 +292,13 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
             GLib.idle_add(
                 self.show_toast, f"No se pudo montar: {exc}", Adw.ToastPriority.HIGH,
             )
+
+    def on_devices_changed(self, bridge, kind: str) -> None:
+        if kind == "device-added":
+            self.show_toast("Dispositivo conectado — revisa la lista para montarlo")
+        else:
+            self.show_toast("Dispositivo desconectado")
+        self.refresh_devices()
 
     def refresh_devices(self) -> None:
         import threading

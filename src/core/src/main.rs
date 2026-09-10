@@ -143,6 +143,10 @@ enum Commands {
         device: String,
     },
 
+    /// Watch UDisks2 for plug/unplug events, streaming JSON lines.
+    /// The GUI subscribes to this instead of polling.
+    Watch,
+
     /// Queue management commands
     #[command(subcommand)]
     Queue(QueueCommands),
@@ -326,6 +330,7 @@ async fn main() -> Result<()> {
         Commands::Devices => cmd_devices(cli.json).await,
         Commands::Mount { device } => cmd_mount(device, cli.json).await,
         Commands::Unmount { device } => cmd_unmount(device, cli.json).await,
+        Commands::Watch => cmd_watch().await,
         Commands::Queue(cmd) => cmd_queue(cmd, cli.json).await,
         Commands::Integrity(cmd) => cmd_integrity(cmd, cli.json).await,
     }
@@ -775,6 +780,21 @@ async fn cmd_mount(device: String, json: bool) -> Result<()> {
         println!("Mounted {} at {}", device, mount_point.display());
     }
     Ok(())
+}
+
+async fn cmd_watch() -> Result<()> {
+    use triplewrapper_core::watch::{watch_events, DeviceEvent};
+
+    watch_events(|event| {
+        let kind = match event {
+            DeviceEvent::Added => "device-added",
+            DeviceEvent::Removed => "device-removed",
+        };
+        if let Ok(line) = serde_json::to_string(&serde_json::json!({"kind": kind})) {
+            println!("{line}");
+        }
+    })
+    .await
 }
 
 async fn cmd_unmount(device: String, json: bool) -> Result<()> {

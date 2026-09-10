@@ -17,6 +17,7 @@ pub mod progress;
 pub mod queue;
 pub mod types;
 pub mod utils;
+pub mod watch;
 
 pub use error::{Result, TripleWrapperError};
 pub use queue::{OperationQueue, Priority, QueueConfig, QueueItem, QueueItemStatus};
