@@ -144,51 +144,40 @@ triplewrapper serve
 ### Project Structure
 ```
 triplewrapper/
-├── src/
-│   ├── core/           # Rust core library + CLI
-│   │   ├── src/
-│   │   │   ├── engine/       # Storage decision engine
-│   │   │   ├── archive/      # 7z/tar/pixz wrapper
-│   │   │   ├── disk/         # Disk scanning (sysinfo + lsblk)
-│   │   │   ├── checksum/     # BLAKE3/SHA256/XXH3 streaming
-│   │   │   ├── progress/     # Real-time telemetry
-│   │   │   ├── ipc/          # DBus service
-│   │   │   └── main.rs       # CLI entry point
-│   │   └── Cargo.toml
-│   │
-│   ├── gui/            # Python/GTK4 GUI
-│   │   ├── triplewrapper_gui/
-│   │   │   ├── widgets/      # SteamGraph, DonutChart, DiskPanel
-│   │   │   ├── core/         # DBus client
-│   │   │   └── utils/        # Formatting, settings
-│   │   ├── data/             # Desktop, icons, schemas
-│   │   ├── meson.build
-│   │   └── pyproject.toml
-│   │
-│   └── ipc/            # Shared IPC definitions
-│
-├── flatpak/            # Flatpak manifest
-├── tests/              # Integration tests
-└── .github/workflows/  # CI/CD
+├── src/core/             # Rust core library + CLI
+│   └── src/              # engine, archive, disk, checksum,
+│                         # progress, queue, ipc, types, utils
+├── triplewrapper_gui/    # Python/GTK4 GUI (canonical)
+│   ├── views/            # welcome, analysis, progress
+│   ├── widgets/          # steam_graph, storage_donut, queue_panel
+│   ├── core/             # bridge, models, protocol
+│   └── data/             # Desktop, icons, schemas, metainfo
+├── tests/unit/           # Headless protocol tests (no display needed)
+├── flatpak/              # Flatpak manifest (local-only, no network share)
+├── meson.build           # GUI build
+├── pyproject.toml        # GUI packaging + ruff/mypy config
+└── .github/workflows/    # CI/CD
 ```
+
+> Canonical GUI lives at `triplewrapper_gui/` (repo root). No other GUI copy exists.
 
 ### Running Tests
 ```bash
 # Rust tests
 cd src/core && cargo test
 
-# Python tests
-cd src/gui && pytest tests/ -v
+# Python tests (headless, no GTK display needed)
+pytest tests/unit -v
 
-# Integration
-cargo test --all && pytest tests/
+# Integration (real CLI protocol)
+./src/core/target/release/triplewrapper-core analyze -a file.zip --json
 ```
 
 ### Building Flatpak
 ```bash
 flatpak-builder --force-clean --user --install-deps-from=flathub \
-  build-dir flatpak/com.triplewrapper.TripleWrapper.json
-flatpak run com.triplewrapper.TripleWrapper
+  build-dir flatpak/com.github.triplewrapper.App.json
+flatpak run --command=triplewrapper-gui com.github.triplewrapper.App
 ```
 
 ## Contributing

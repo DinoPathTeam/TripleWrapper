@@ -1,5 +1,5 @@
 {
-  "app-id": "com.triplewrapper.TripleWrapper",
+  "app-id": "com.github.triplewrapper.App",
   "runtime": "org.gnome.Platform",
   "runtime-version": "46",
   "sdk": "org.gnome.Sdk",
@@ -42,22 +42,12 @@
   ],
   "modules": [
     {
-      "name": "python3-dependencies",
+      "name": "triplewrapper-core",
       "buildsystem": "simple",
       "build-commands": [
-        "pip3 install --no-index --find-links=/app/packages --prefix=/app pydbus psutil graphene"
+        "cargo build --release --manifest-path src/core/Cargo.toml",
+        "install -Dm755 src/core/target/release/triplewrapper-core /app/bin/triplewrapper-core"
       ],
-      "sources": [
-        {
-          "type": "file",
-          "url": "https://files.pythonhosted.org/packages/source/p/pydbus/pydbus-0.6.0.tar.gz",
-          "sha256": "3e8c2c8b8e8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8"
-        }
-      ]
-    },
-    {
-      "name": "triplewrapper-core",
-      "buildsystem": "cargo",
       "build-options": {
         "env": {
           "CARGO_HOME": "/run/build/triplewrapper/cargo"
@@ -66,12 +56,9 @@
       "sources": [
         {
           "type": "git",
-          "url": "https://github.com/triplewrapper/triplewrapper.git",
+          "url": "https://github.com/DinoPathTeam/TripleWrapper.git",
           "branch": "main"
         }
-      ],
-      "submodules": [
-        "src/core"
       ]
     },
     {
@@ -83,12 +70,9 @@
       "sources": [
         {
           "type": "git",
-          "url": "https://github.com/triplewrapper/triplewrapper.git",
+          "url": "https://github.com/DinoPathTeam/TripleWrapper.git",
           "branch": "main"
         }
-      ],
-      "submodules": [
-        "src/gui"
       ]
     }
   ]

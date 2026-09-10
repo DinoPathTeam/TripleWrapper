@@ -114,11 +114,11 @@ jobs:
       - name: Build Flatpak
         run: |
           flatpak-builder --force-clean --user --install-deps-from=flathub \
-            build-dir flatpak/com.triplewrapper.TripleWrapper.json
+            build-dir flatpak/com.github.triplewrapper.App.json
 
       - name: Test Flatpak
         run: |
-          flatpak run --command=triplewrapper-gui com.triplewrapper.TripleWrapper --help
+          flatpak run --command=triplewrapper-gui com.github.triplewrapper.App --help
 
   # Release
   release:
@@ -137,4 +137,4 @@ jobs:
           generate_release_notes: true
           files: |
             src/core/target/release/triplewrapper-core
-            flatpak/build-dir/com.triplewrapper.TripleWrapper.flatpak
+            flatpak/build-dir/com.github.triplewrapper.App.flatpak
