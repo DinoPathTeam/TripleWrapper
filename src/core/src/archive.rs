@@ -55,9 +55,14 @@ fn log_command(cmd: &Command) {
     info!("Running: {} {}", prog, args.join(" "));
 }
 
-/// Append `-p<secret>` to a 7z command. The secret only lives in the
-/// child-process argv (same exposure as typing it in a terminal);
-/// it is never logged (see [`log_command`]) nor persisted.
+/// Append `-p<secret>` to a 7z command.
+///
+/// NOTE (verified against p7zip 26.03): 7z reads interactive passwords from
+/// /dev/tty, *not* from a stdin pipe — piped input is ignored and the
+/// operation fails with "Wrong password?". So argv is the only
+/// non-interactive channel 7z offers. Exposure is contained by: env var
+/// preferred over `--password` flag (warned on stderr), redacted command
+/// logs (see [`log_command`]), secret never persisted (serde skip).
 fn push_password_arg(cmd: &mut Command, password: Option<&str>) {
     if let Some(pw) = password {
         if !pw.is_empty() {
@@ -371,9 +376,8 @@ impl ArchiveOperator {
             }
         };
 
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.stdin(Stdio::null());
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         log_command(&cmd);
 
@@ -586,9 +590,8 @@ impl ArchiveOperator {
             }
         };
 
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.stdin(Stdio::null());
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         log_command(&cmd);
 
@@ -655,9 +658,8 @@ impl ArchiveOperator {
             }
         };
 
-        cmd.stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::piped());
+        cmd.stdin(Stdio::null());
+        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
 
         log_command(&cmd);
 
@@ -700,7 +702,10 @@ impl ArchiveOperator {
         cmd.stdin(Stdio::null());
         cmd.stdout(Stdio::null()).stderr(Stdio::null());
 
-        let status = cmd.status().await?;
+        log_command(&cmd);
+
+        let mut child = cmd.spawn()?;
+        let status = child.wait().await?;
         Ok(status.success())
     }
 
@@ -755,5 +760,123 @@ mod tests {
     async fn test_find_tools() {
         let op = ArchiveOperator::new();
         assert!(op.is_ok(), "7z and tar should be available");
+    }
+
+    /// Skip helper: these tests need the real 7z binary (CI installs
+    /// p7zip-full; local runs without it skip instead of failing).
+    fn sevenz() -> Option<ArchiveOperator> {
+        match ArchiveOperator::new() {
+            Ok(op) => Some(op),
+            Err(_) => {
+                eprintln!("SKIP: 7z/tar not available");
+                None
+            }
+        }
+    }
+
+    /// Build a header-encrypted 7z fixture with two files.
+    /// Sources are removed afterwards so tests only see the archive.
+    fn make_encrypted_fixture(dir: &Path) -> PathBuf {
+        std::fs::write(dir.join("f1.txt"), b"triplewrapper-secret-1").unwrap();
+        std::fs::write(dir.join("f2.txt"), b"triplewrapper-secret-2").unwrap();
+        let archive = dir.join("secret.7z");
+        let status = std::process::Command::new("7z")
+            .args(["a", "-pS3cr3t-t3st", "-mhe=on"])
+            .arg(&archive)
+            .arg(dir.join("f1.txt"))
+            .arg(dir.join("f2.txt"))
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success(), "fixture creation failed");
+        std::fs::remove_file(dir.join("f1.txt")).unwrap();
+        std::fs::remove_file(dir.join("f2.txt")).unwrap();
+        archive
+    }
+
+    #[tokio::test]
+    async fn test_encrypted_detect_list_test_extract() {
+        let Some(op) = sevenz() else { return };
+        let dir = tempfile::tempdir().unwrap();
+        let archive = make_encrypted_fixture(dir.path());
+
+        assert!(op.is_encrypted(&archive).await, "mhe archive not detected");
+
+        let meta = op.list(&archive, Some("S3cr3t-t3st")).await.unwrap();
+        assert!(meta.encrypted);
+        assert_eq!(meta.entries.len(), 2);
+
+        assert!(
+            !op.test(&archive, None).await.unwrap(),
+            "no-password test must fail"
+        );
+        assert!(op.test(&archive, Some("S3cr3t-t3st")).await.unwrap());
+
+        let out = dir.path().join("out");
+        std::fs::create_dir_all(&out).unwrap();
+        op.extract(
+            &archive,
+            &out,
+            ExtractOptions {
+                password: Some("S3cr3t-t3st"),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        assert_eq!(
+            std::fs::read(out.join("f1.txt")).unwrap(),
+            b"triplewrapper-secret-1"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_resume_skips_extracted() {
+        let Some(op) = sevenz() else { return };
+        let dir = tempfile::tempdir().unwrap();
+        let archive = make_encrypted_fixture(dir.path());
+        let out = dir.path().join("out");
+        std::fs::create_dir_all(&out).unwrap();
+
+        // Full extract, then simulate interruption by deleting one file.
+        op.extract(
+            &archive,
+            &out,
+            ExtractOptions {
+                password: Some("S3cr3t-t3st"),
+                ..Default::default()
+            },
+        )
+        .await
+        .unwrap();
+        std::fs::remove_file(out.join("f2.txt")).unwrap();
+
+        let (_stats, skipped) = op
+            .resume_extract(&archive, &out, None, None, Some("S3cr3t-t3st"))
+            .await
+            .unwrap();
+        assert_eq!(skipped, 1, "f1.txt should have been skipped");
+        assert!(out.join("f2.txt").exists(), "f2.txt should be restored");
+    }
+
+    #[tokio::test]
+    async fn test_is_encrypted_negative_for_plain_tar() {
+        let Some(op) = sevenz() else { return };
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("plain.txt"), b"plain").unwrap();
+        let archive = dir.path().join("plain.tar.gz");
+        let status = std::process::Command::new("tar")
+            .args(["-czf"])
+            .arg(&archive)
+            .arg("-C")
+            .arg(dir.path())
+            .arg("plain.txt")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert!(!op.is_encrypted(&archive).await);
     }
 }

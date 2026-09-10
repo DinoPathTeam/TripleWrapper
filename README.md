@@ -201,6 +201,11 @@ flatpak run --command=triplewrapper-gui com.github.triplewrapper.App
 - **Checksum verification** before any file replacement
 - **Atomic rename** (renameat2) for in-place safety
 - **No arbitrary code execution** - only calls system tools (7z, tar)
+- **Passwords**: prefer `TRIPLEWRAPPER_PASSWORD` over `--password` (visible in
+  process list); never logged (`-p***` redaction), never persisted in queue
+  files, wiped from memory on drop. Note: p7zip only accepts passwords via
+  argv (it ignores piped stdin), so the 7z child briefly exposes it to local
+  users — inherent to the 7z CLI, contained by the measures above
 
 ## Roadmap
 
