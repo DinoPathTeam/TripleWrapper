@@ -135,6 +135,24 @@ fn query_plugin_info(path: &Path, file_name: &str) -> PluginInfo {
     }
 }
 
+/// Linux/macOS errno for "text file busy".
+const ETXTBSY: i32 = 26;
+
+/// Spawn a plugin child, retrying once on ETXTBSY.
+///
+/// Container overlays (CI) can refuse exec of a just-written executable;
+/// a single short retry closes the race. Long-installed production
+/// plugins never hit this; fresh test fixtures do.
+async fn spawn_retry(cmd: &mut Command) -> std::io::Result<tokio::process::Child> {
+    match cmd.spawn() {
+        Err(e) if e.raw_os_error() == Some(ETXTBSY) => {
+            tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+            cmd.spawn()
+        }
+        other => other,
+    }
+}
+
 /// Environment for a plugin child: password travels via env, never argv.
 fn plugin_env(password: Option<&str>) -> Vec<(String, String)> {
     password
@@ -160,7 +178,7 @@ pub async fn plugin_list(
     for (k, v) in plugin_env(password) {
         cmd.env(k, v);
     }
-    let out = cmd.output().await?;
+    let out = spawn_retry(&mut cmd).await?.wait_with_output().await?;
     if !out.status.success() {
         return Err(TripleWrapperError::CompressionFailed(
             String::from_utf8_lossy(&out.stderr).trim().to_string(),
@@ -210,7 +228,7 @@ pub async fn plugin_extract(
         plugin.id,
         archive.display()
     );
-    let mut child = cmd.spawn()?;
+    let mut child = spawn_retry(&mut cmd).await?;
     if let Some(stdout) = child.stdout.take() {
         let mut reader = BufReader::new(stdout).lines();
         while let Ok(Some(line)) = reader.next_line().await {
@@ -286,7 +304,7 @@ pub async fn plugin_test(
     for (k, v) in plugin_env(password) {
         cmd.env(k, v);
     }
-    let status = cmd.status().await?;
+    let status = spawn_retry(&mut cmd).await?.wait().await?;
     Ok(status.success())
 }
 
@@ -345,6 +363,19 @@ esac
         std::fs::write(dir.path().join("random-tool"), "#!/bin/sh\n").unwrap();
         std::fs::write(dir.path().join("notes.txt"), "hi").unwrap();
         assert!(discover_in_dirs(&[dir.path().to_path_buf()]).is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_spawn_retry_passes_through() {
+        let (_dir, path) = mock_plugin_dir();
+        let mut cmd = Command::new(&path);
+        cmd.args(["test", "-a"]);
+        cmd.arg("/tmp/fake.mock");
+        cmd.stdin(Stdio::null());
+        cmd.stdout(Stdio::null());
+        cmd.stderr(Stdio::null());
+        let status = spawn_retry(&mut cmd).await.unwrap().wait().await.unwrap();
+        assert!(status.success());
     }
 
     #[tokio::test]
