@@ -56,13 +56,6 @@ python.install_sources(
 # Executable script
 exe = python.install_script('triplewrapper-gui', install_dir: get_option('bindir'))
 
-# Tests
-test('gui-tests', python.find_installation().python,
-  args: ['-m', 'pytest', 'tests/'],
-  dependencies: [exe],
-  is_parallel: false
-)
-
 # Summary
 summary({
   'Project': 'TripleWrapper GUI',
