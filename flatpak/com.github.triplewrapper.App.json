@@ -4,7 +4,6 @@
   "runtime-version": "46",
   "sdk": "org.gnome.Sdk",
   "command": "triplewrapper-gui",
-  "license": "MIT",
   "finish-args": [
     "--share=ipc",
     "--socket=wayland",
@@ -53,9 +52,8 @@
       },
       "sources": [
         {
-          "type": "git",
-          "url": "https://github.com/DinoPathTeam/TripleWrapper.git",
-          "branch": "main"
+          "type": "dir",
+          "path": ".."
         }
       ]
     },
@@ -67,9 +65,8 @@
       ],
       "sources": [
         {
-          "type": "git",
-          "url": "https://github.com/DinoPathTeam/TripleWrapper.git",
-          "branch": "main"
+          "type": "dir",
+          "path": ".."
         }
       ]
     }
