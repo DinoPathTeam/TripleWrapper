@@ -16,11 +16,10 @@ graphene_dep = dependency('graphene-1.0', version: '>=1.10')
 gtk4_dep = dependency('gtk4', version: '>=4.10')
 libadwaita_dep = dependency('libadwaita-1', version: '>=1.4')
 
-# Data files
-data_dir = join_paths(get_option('datadir'), 'triplewrapper')
-icon_dir = join_paths(data_dir, 'icons/hicolor/scalable/apps')
-desktop_dir = join_paths(data_dir, 'applications')
-metainfo_dir = join_paths(data_dir, 'metainfo')
+# Data files (standard locations required by AppStream/desktop lint)
+icon_dir = join_paths(get_option('datadir'), 'icons/hicolor/scalable/apps')
+desktop_dir = join_paths(get_option('datadir'), 'applications')
+metainfo_dir = join_paths(get_option('datadir'), 'metainfo')
 schemas_dir = join_paths(get_option('datadir'), 'glib-2.0/schemas')
 
 # Install data files
@@ -62,5 +61,4 @@ summary({
   'Libadwaita': libadwaita_dep.version(),
   'Graphene': graphene_dep.version(),
   'Install prefix': get_option('prefix'),
-  'Data dir': data_dir,
 })

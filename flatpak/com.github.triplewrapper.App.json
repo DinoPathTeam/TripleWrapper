@@ -41,6 +41,42 @@
   ],
   "modules": [
     {
+      "name": "7zip",
+      "buildsystem": "simple",
+      "build-commands": [
+        "make -C CPP/7zip/Bundles/Alone2 -f makefile.gcc -j$FLATPAK_BUILDER_N_JOBS CFLAGS_WARN=-Wno-error=array-bounds",
+        "install -Dm755 CPP/7zip/Bundles/Alone2/_o/7zz /app/bin/7zz",
+        "ln -s 7zz /app/bin/7z"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "archive-type": "tar-gzip",
+          "strip-components": 1,
+          "url": "https://github.com/ip7z/7zip/archive/refs/tags/24.09.tar.gz",
+          "sha256": "e4757b307925227724a2044651193664ba3d04e9ac13b8e631f1667896014bbf"
+        }
+      ]
+    },
+    {
+      "name": "pixz",
+      "buildsystem": "simple",
+      "build-commands": [
+        "./configure --prefix=/app",
+        "make -j$FLATPAK_BUILDER_N_JOBS",
+        "make install"
+      ],
+      "sources": [
+        {
+          "type": "archive",
+          "archive-type": "tar-gzip",
+          "strip-components": 1,
+          "url": "https://github.com/vasi/pixz/releases/download/v1.0.7/pixz-1.0.7.tar.gz",
+          "sha256": "d1b6de1c0399e54cbd18321b8091bbffef6d209ec136d4466f398689f62c3b5f"
+        }
+      ]
+    },
+    {
       "name": "triplewrapper-core",
       "buildsystem": "simple",
       "build-commands": [
