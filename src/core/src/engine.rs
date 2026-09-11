@@ -37,6 +37,21 @@ pub struct StorageEngine {
     disks_cache: Vec<DiskInfo>,
 }
 
+/// Pure selection policy, hermetically testable: non-system disks with
+/// enough free space, removable first, then most free space.
+fn select_best_disk(disks: &[DiskInfo], needed: u64) -> Option<DiskInfo> {
+    let mut candidates: Vec<&DiskInfo> = disks
+        .iter()
+        .filter(|d| !d.is_system && d.free_bytes >= needed)
+        .collect();
+    candidates.sort_by(|a, b| {
+        (!a.is_removable)
+            .cmp(&!b.is_removable)
+            .then_with(|| b.free_bytes.cmp(&a.free_bytes))
+    });
+    candidates.into_iter().next().cloned()
+}
+
 impl StorageEngine {
     pub fn new(config: EngineConfig) -> Self {
         Self {
@@ -241,18 +256,12 @@ impl StorageEngine {
 
     /// Best non-system disk holding at least `needed` bytes free, if any.
     /// Used to suggest an alternative destination when space runs out.
+    /// Returns `None` on machines with no eligible disk (e.g. minimal
+    /// containers/VMs where everything is system-mounted) — callers must
+    /// fall back to the cleanup tip instead of unwrapping.
     pub fn best_disk_with_space(&mut self, needed: u64) -> Option<DiskInfo> {
-        let mut candidates: Vec<DiskInfo> = self
-            .get_disks_owned()
-            .into_iter()
-            .filter(|d| !d.is_system && d.free_bytes >= needed)
-            .collect();
-        candidates.sort_by(|a, b| {
-            (!a.is_removable)
-                .cmp(&!b.is_removable)
-                .then_with(|| b.free_bytes.cmp(&a.free_bytes))
-        });
-        candidates.into_iter().next()
+        let disks = self.get_disks_owned();
+        select_best_disk(&disks, needed)
     }
 
     /// Preflight for extractions: ensures the OUTPUT disk can hold the
@@ -385,13 +394,43 @@ mod tests {
         assert!(text.contains("Recomendación"), "got: {text}");
     }
 
+    fn fake_disk(label: &str, free: u64, removable: bool, system: bool) -> DiskInfo {
+        DiskInfo {
+            mount_point: PathBuf::from(format!("/mnt/{label}")),
+            label: label.into(),
+            filesystem: "ext4".into(),
+            total_bytes: free * 2,
+            free_bytes: free,
+            used_bytes: free,
+            is_removable: removable,
+            is_system: system,
+            device_path: String::new(),
+        }
+    }
+
     #[test]
-    fn test_best_disk_with_space_prefers_options() {
-        let mut engine = StorageEngine::new(EngineConfig::default());
-        // 1 byte fits somewhere on any real machine.
-        assert!(engine.best_disk_with_space(1).is_some());
-        // Nothing fits u64::MAX.
-        assert!(engine.best_disk_with_space(u64::MAX).is_none());
+    fn test_select_best_disk_prefers_removable_then_biggest() {
+        // NOTE: fabricated disks on purpose — real runners (containers,
+        // minimal VMs) may have no eligible disk at all, so environment
+        // hardware must never decide a unit test (see CI failure where
+        // best_disk_with_space(1) was None on a bare runner).
+        let disks = vec![
+            fake_disk("sys", 1_000_000, false, true),
+            fake_disk("big-internal", 900_000, false, false),
+            fake_disk("small-usb", 100_000, true, false),
+            fake_disk("big-usb", 500_000, true, false),
+        ];
+        // Removable wins over bigger internal.
+        assert_eq!(select_best_disk(&disks, 10_000).unwrap().label, "big-usb");
+        // System disks never qualify, however roomy.
+        assert_eq!(
+            select_best_disk(&[fake_disk("sys", u64::MAX / 2, false, true)], 1).map(|d| d.label),
+            None::<String>,
+        );
+        // Nothing fits the demand.
+        assert!(select_best_disk(&disks, u64::MAX).is_none());
+        // Empty inventory.
+        assert!(select_best_disk(&[], 1).is_none());
     }
 
     #[test]
