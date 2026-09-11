@@ -59,16 +59,33 @@ pub fn detect_format(path: &Path) -> Result<ArchiveFormat> {
         .ok_or_else(|| crate::TripleWrapperError::InvalidFormat("Unknown archive format".into()))
 }
 
-/// Resolve the format preferring the extension, falling back to magic
-/// bytes. Extension-first matters: `pixz` and `xz` share magic, and the
-/// user's explicit suffix is the best signal. Magic rescues extensionless
-/// or oddly-suffixed files (e.g. a tarball named `backup.bin`).
-/// A positively wrong suffix (zip containing tar) still wins by design.
+/// Resolve the format: builtin extension → magic bytes → installed
+/// `triplewrapper-<ext>` plugin. Extension-first matters: `pixz` and `xz`
+/// share magic, and the user's explicit suffix is the best signal. Magic
+/// rescues extensionless files; plugins rescue unknown suffixes.
+/// A positively wrong builtin suffix (zip containing tar) still wins.
 pub fn resolve_format(path: &Path) -> Result<ArchiveFormat> {
     if let Some(fmt) = ArchiveFormat::from_extension(path) {
         return Ok(fmt);
     }
-    detect_format(path)
+    match detect_format(path) {
+        Ok(fmt) => Ok(fmt),
+        Err(_) => {
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if !ext.is_empty() {
+                if let Some(plugin) = crate::plugin::find_for_extension(&ext) {
+                    return Ok(ArchiveFormat::External(plugin.id));
+                }
+            }
+            Err(crate::TripleWrapperError::InvalidFormat(format!(
+                "Unknown archive format '{ext}': no builtin handler and no triplewrapper-{ext} plugin installed"
+            )))
+        }
+    }
 }
 
 /// Get optimal compression level for format
@@ -82,6 +99,8 @@ pub fn optimal_compression_level(format: ArchiveFormat, level: u8) -> u8 {
         ArchiveFormat::TarBz2 => level.min(9),
         ArchiveFormat::Tar => 0, // No compression
         ArchiveFormat::Pixz => level.min(9),
+        // Plugins own their flags; pass the level through untouched.
+        ArchiveFormat::External(_) => level,
     }
 }
 
@@ -101,6 +120,8 @@ pub fn compression_args(format: ArchiveFormat, level: u8, threads: usize) -> Vec
         ArchiveFormat::TarBz2 => vec!["-cjf".to_string()],
         ArchiveFormat::Tar => vec!["-cf".to_string()],
         ArchiveFormat::Pixz => vec!["-p".to_string(), threads.to_string()],
+        // Plugins own their CLI; core never builds args for them.
+        ArchiveFormat::External(_) => vec![],
     }
 }
 
@@ -137,6 +158,7 @@ pub fn recommended_checksum(format: ArchiveFormat) -> ChecksumAlgorithm {
         | ArchiveFormat::TarBz2 => ChecksumAlgorithm::Blake3,
         ArchiveFormat::Tar => ChecksumAlgorithm::Xxh3, // Fast for uncompressed
         ArchiveFormat::Pixz => ChecksumAlgorithm::Blake3,
+        ArchiveFormat::External(_) => ChecksumAlgorithm::Blake3,
     }
 }
 

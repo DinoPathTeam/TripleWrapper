@@ -384,6 +384,26 @@ class CoreBridge(GObject.Object):
         data: dict = json.loads(proc.stdout or "{}")
         return data
 
+    def plugin_list(self) -> list[dict]:
+        """Run `plugin list --json`. Empty when none installed (normal)."""
+        binary = self._resolve_bin()
+        if not binary:
+            return []
+        try:
+            proc = subprocess.run(
+                [binary, "-j", "plugin"],
+                capture_output=True, text=True, timeout=30, check=False,
+            )
+        except (OSError, subprocess.SubprocessError):
+            return []
+        if proc.returncode != 0:
+            return []
+        try:
+            data = json.loads(proc.stdout or "[]")
+        except json.JSONDecodeError:
+            return []
+        return data if isinstance(data, list) else []
+
     def queue_add(self, archive: str, operation: str = "extract", priority: str = "normal",
                   output: str | None = None, password: str | None = None) -> int:
         """Run `queue add` and return numeric id.

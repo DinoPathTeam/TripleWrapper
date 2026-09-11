@@ -306,6 +306,7 @@ El agente debe comunicarse con el creador de forma:
 - **CI/CD:** GitHub Actions
 - **Distribución:** Flatpak (Flathub), AUR, GitHub Releases
 - **Principio local-only:** todo en la máquina del usuario, sin cloud, sin red (Flatpak sin `--share=network`), sin telemetría externa
+- **API estable (decisión v0.4):** CLI + JSON por subprocess (`docs/API.md`). El servicio D-Bus (`serve`) está deprecado y se elimina en v1.0. Los plugins de formatos son ejecutables `triplewrapper-*`, sin SDK ni daemon.
 
 ---
 

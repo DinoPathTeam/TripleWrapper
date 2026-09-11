@@ -23,7 +23,12 @@ class WelcomeView(Gtk.Box):
         self.set_valign(Gtk.Align.CENTER)
         self.set_halign(Gtk.Align.CENTER)
         self.current_path: str | None = None
+        self._extra_suffixes: list[str] = []
         self._build_ui()
+
+    def set_extra_suffixes(self, suffixes: list[str]) -> None:
+        """Extra file suffixes from installed format plugins."""
+        self._extra_suffixes = [s for s in suffixes if s]
 
     def _build_ui(self) -> None:
         # Title block
@@ -108,6 +113,7 @@ class WelcomeView(Gtk.Box):
         for ext in (
             "7z", "zip", "tar", "gz", "xz", "zst", "bz2",
             "tar.gz", "tgz", "tar.xz", "txz", "tar.zst", "tar.bz2", "tbz2",
+            *self._extra_suffixes,
         ):
             supported.add_suffix(ext)
         filters.append(supported)

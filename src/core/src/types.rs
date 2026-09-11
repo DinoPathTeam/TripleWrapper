@@ -29,8 +29,12 @@ impl Default for OperationId {
     }
 }
 
-/// Supported archive formats
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+/// Supported archive formats.
+///
+/// Builtins are matched by extension; anything else a
+/// `triplewrapper-<id>` plugin claims becomes `External(id)`.
+/// (`Copy` was dropped for the payload; clone explicitly.)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum ArchiveFormat {
     SevenZ,
@@ -41,6 +45,7 @@ pub enum ArchiveFormat {
     TarZst,
     TarBz2,
     Pixz,
+    External(String),
 }
 
 impl ArchiveFormat {
@@ -59,29 +64,31 @@ impl ArchiveFormat {
         }
     }
 
-    pub fn default_extension(&self) -> &'static str {
+    pub fn default_extension(&self) -> String {
         match self {
-            Self::SevenZ => "7z",
-            Self::Zip => "zip",
-            Self::Tar => "tar",
-            Self::TarGz => "tar.gz",
-            Self::TarXz => "tar.xz",
-            Self::TarZst => "tar.zst",
-            Self::TarBz2 => "tar.bz2",
-            Self::Pixz => "tar.pixz",
+            Self::SevenZ => "7z".into(),
+            Self::Zip => "zip".into(),
+            Self::Tar => "tar".into(),
+            Self::TarGz => "tar.gz".into(),
+            Self::TarXz => "tar.xz".into(),
+            Self::TarZst => "tar.zst".into(),
+            Self::TarBz2 => "tar.bz2".into(),
+            Self::Pixz => "tar.pixz".into(),
+            Self::External(id) => id.clone(),
         }
     }
 
-    pub fn compression_tool(&self) -> &'static str {
+    pub fn compression_tool(&self) -> String {
         match self {
-            Self::SevenZ => "7z",
-            Self::Zip => "7z",
-            Self::Tar => "tar",
-            Self::TarGz => "tar",
-            Self::TarXz => "tar",
-            Self::TarZst => "tar",
-            Self::TarBz2 => "tar",
-            Self::Pixz => "pixz",
+            Self::SevenZ => "7z".into(),
+            Self::Zip => "7z".into(),
+            Self::Tar => "tar".into(),
+            Self::TarGz => "tar".into(),
+            Self::TarXz => "tar".into(),
+            Self::TarZst => "tar".into(),
+            Self::TarBz2 => "tar".into(),
+            Self::Pixz => "pixz".into(),
+            Self::External(id) => format!("triplewrapper-{id}"),
         }
     }
 }

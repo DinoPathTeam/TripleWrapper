@@ -213,7 +213,7 @@ flatpak run --command=triplewrapper-gui com.github.triplewrapper.App
 - [x] **v0.2**: Batch operations, queue management
 - [x] **v0.2.1**: Real core integration (JSON protocol, queue wiring)
 - [x] **v0.3**: Local avanzado (archivos cifrados 7z AES, reanudar operaciones grandes, base local de integridad)
-- [ ] **v0.4**: Plugin system for custom formats (solo plugins locales, sin red)
+- [x] **v0.4**: Plugin system local (ejecutables `triplewrapper-*`, contrato en `docs/API.md`)
 - [ ] **v1.0**: Stable API, Flathub publication
 
 > **Principio local-only**: sin backends cloud (fuera rclone), sin telemetría externa,

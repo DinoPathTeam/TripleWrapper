@@ -13,6 +13,7 @@ pub mod integrity;
 #[cfg(not(test))]
 pub mod ipc;
 pub mod mount;
+pub mod plugin;
 pub mod progress;
 pub mod queue;
 pub mod types;

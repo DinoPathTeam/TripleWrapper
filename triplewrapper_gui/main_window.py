@@ -123,6 +123,23 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
     # ------------------------------------------------------------- Navigation
     def go_welcome(self) -> None:
         self._stack.set_visible_child_name("welcome")
+        self.refresh_plugin_suffixes()
+
+    def refresh_plugin_suffixes(self) -> None:
+        import threading
+
+        threading.Thread(target=self._do_refresh_plugin_suffixes, daemon=True).start()
+
+    def _do_refresh_plugin_suffixes(self) -> None:
+        from gi.repository import GLib
+
+        try:
+            suffixes = []
+            for plugin in self._bridge.plugin_list():
+                suffixes.extend(plugin.get("extensions", []))
+            GLib.idle_add(self._welcome.set_extra_suffixes, suffixes)
+        except Exception:  # noqa: BLE001 - best-effort background refresh
+            return
 
     def go_browse(self) -> None:
         self._stack.set_visible_child_name("browse")

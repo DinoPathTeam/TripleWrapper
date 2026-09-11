@@ -73,7 +73,7 @@ fn push_password_arg(cmd: &mut Command, password: Option<&str>) {
 }
 
 /// Total bytes of regular files under `dir` (follows nothing, skips errors).
-fn dir_size(dir: &Path) -> u64 {
+pub(crate) fn dir_size(dir: &Path) -> u64 {
     walkdir::WalkDir::new(dir)
         .into_iter()
         .filter_map(|e| e.ok())
@@ -139,6 +139,23 @@ impl ArchiveOperator {
     pub async fn list(&self, archive: &Path, password: Option<&str>) -> Result<ArchiveMetadata> {
         let format = resolve_format(archive)?;
 
+        if let ArchiveFormat::External(id) = &format {
+            let plugin = crate::plugin::find_for_id(id).ok_or_else(|| {
+                TripleWrapperError::InvalidFormat(format!(
+                    "plugin triplewrapper-{id} vanished since detection"
+                ))
+            })?;
+            let meta = crate::plugin::plugin_list(&plugin, archive, password).await?;
+            return Ok(ArchiveMetadata {
+                path: archive.to_path_buf(),
+                format,
+                size: meta.size,
+                entries: meta.entries,
+                solid: meta.solid,
+                encrypted: meta.encrypted,
+                comment: meta.comment,
+            });
+        }
         let (entries, encrypted, solid) = match format {
             ArchiveFormat::SevenZ | ArchiveFormat::Zip => self.list_7z(archive, password).await?,
             ArchiveFormat::Tar
@@ -147,6 +164,12 @@ impl ArchiveOperator {
             | ArchiveFormat::TarZst
             | ArchiveFormat::TarBz2 => (self.list_tar(archive).await?, false, false),
             ArchiveFormat::Pixz => (self.list_pixz(archive).await?, false, false),
+            // Handled by the early-return dispatch above.
+            ArchiveFormat::External(id) => {
+                return Err(TripleWrapperError::Internal(format!(
+                    "plugin {id} escaped early-return dispatch"
+                )));
+            }
         };
 
         let size = std::fs::metadata(archive)?.len();
@@ -366,6 +389,24 @@ impl ArchiveOperator {
         } = opts;
         let format = resolve_format(archive)?;
 
+        // Plugin formats bypass the builtin command builders entirely.
+        if let ArchiveFormat::External(id) = &format {
+            let plugin = crate::plugin::find_for_id(id).ok_or_else(|| {
+                TripleWrapperError::InvalidFormat(format!(
+                    "plugin triplewrapper-{id} vanished since detection"
+                ))
+            })?;
+            return crate::plugin::plugin_extract(
+                &plugin,
+                archive,
+                output_dir,
+                files,
+                password,
+                progress_tx,
+            )
+            .await;
+        }
+
         let start = Instant::now();
         let mut stats = OperationStats {
             duration: std::time::Duration::ZERO,
@@ -430,6 +471,13 @@ impl ArchiveOperator {
                 }
                 cmd.arg(archive.to_str().unwrap());
                 cmd
+            }
+            // Handled by the early-return dispatch above; kept to satisfy
+            // exhaustiveness if that ever changes.
+            ArchiveFormat::External(id) => {
+                return Err(TripleWrapperError::Internal(format!(
+                    "plugin {id} escaped early-return dispatch"
+                )));
             }
         };
 
@@ -668,6 +716,11 @@ impl ArchiveOperator {
                     "Pixz doesn't support incremental add".into(),
                 ));
             }
+            ArchiveFormat::External(id) => {
+                return Err(TripleWrapperError::InvalidFormat(format!(
+                    "plugin triplewrapper-{id} does not support create/add yet"
+                )));
+            }
         };
 
         cmd.stdin(Stdio::null());
@@ -731,6 +784,11 @@ impl ArchiveOperator {
                 }
                 cmd
             }
+            ArchiveFormat::External(id) => {
+                return Err(TripleWrapperError::InvalidFormat(format!(
+                    "plugin triplewrapper-{id} does not support delete yet"
+                )));
+            }
             _ => {
                 return Err(TripleWrapperError::InvalidFormat(
                     "Delete only supported for 7z/zip".into(),
@@ -766,6 +824,15 @@ impl ArchiveOperator {
     /// Test archive integrity
     pub async fn test(&self, archive: &Path, password: Option<&str>) -> Result<bool> {
         let format = resolve_format(archive)?;
+
+        if let ArchiveFormat::External(id) = &format {
+            let plugin = crate::plugin::find_for_id(id).ok_or_else(|| {
+                TripleWrapperError::InvalidFormat(format!(
+                    "plugin triplewrapper-{id} vanished since detection"
+                ))
+            })?;
+            return crate::plugin::plugin_test(&plugin, archive, password).await;
+        }
 
         let archive_str = archive.to_str().unwrap();
         let mut cmd = if matches!(format, ArchiveFormat::SevenZ | ArchiveFormat::Zip) {
@@ -1063,10 +1130,7 @@ mod tests {
         // Solid blocks need 2+ files: single-file archives report Solid = -.
         std::fs::write(dir.path().join("a.txt"), b"aaa").unwrap();
         std::fs::write(dir.path().join("b.txt"), b"bbb").unwrap();
-        for (name, solid_flag, expected) in [
-            ("s.7z", "-ms=on", true),
-            ("n.7z", "-ms=off", false),
-        ] {
+        for (name, solid_flag, expected) in [("s.7z", "-ms=on", true), ("n.7z", "-ms=off", false)] {
             let archive = dir.path().join(name);
             let status = std::process::Command::new("7z")
                 .args(["a", solid_flag])

@@ -180,6 +180,9 @@ enum Commands {
     /// The GUI subscribes to this instead of polling.
     Watch,
 
+    /// List installed format plugins (triplewrapper-* executables).
+    Plugin,
+
     /// Queue management commands
     #[command(subcommand)]
     Queue(QueueCommands),
@@ -375,6 +378,7 @@ async fn main() -> Result<()> {
         Commands::Mount { device } => cmd_mount(device, cli.json).await,
         Commands::Unmount { device } => cmd_unmount(device, cli.json).await,
         Commands::Watch => cmd_watch().await,
+        Commands::Plugin => cmd_plugin(cli.json).await,
         Commands::Queue(cmd) => cmd_queue(cmd, cli.json).await,
         Commands::Integrity(cmd) => cmd_integrity(cmd, cli.json).await,
     }
@@ -1053,10 +1057,41 @@ async fn cmd_unmount(device: String, json: bool) -> Result<()> {
 }
 
 async fn cmd_serve() -> Result<()> {
+    eprintln!(
+        "warning: `serve` (D-Bus) is deprecated and will be removed in v1.0; \
+        the stable API is CLI+JSON over subprocess (see docs/API.md)"
+    );
     info!("Starting TripleWrapper core service...");
     triplewrapper_core::ipc::run_service()
         .await
         .map_err(|e| crate::TripleWrapperError::Internal(e.to_string()))
+}
+
+async fn cmd_plugin(json: bool) -> Result<()> {
+    use triplewrapper_core::plugin::discover;
+
+    let plugins = discover();
+    if json {
+        println!("{}", serde_json::to_string(&plugins)?);
+    } else if plugins.is_empty() {
+        println!("No format plugins installed (executables named triplewrapper-* on PATH).");
+    } else {
+        println!("{:<22} {:<16}  Description", "ID", "Extensions");
+        println!("----------------------------------------------------------------------");
+        for p in &plugins {
+            println!(
+                "{:<22} {:<16}  {}",
+                p.id,
+                p.extensions.join(","),
+                if p.description.is_empty() {
+                    p.path.display().to_string()
+                } else {
+                    p.description.clone()
+                },
+            );
+        }
+    }
+    Ok(())
 }
 
 async fn cmd_integrity(cmd: IntegrityCommands, json: bool) -> Result<()> {
