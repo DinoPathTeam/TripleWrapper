@@ -2,48 +2,50 @@
 <component type="desktop-application">
   <id>com.github.triplewrapper.App</id>
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>GPL-3.0-or-later</project_license>
+  <project_license>MIT</project_license>
   <name>TripleWrapper</name>
   <summary>Smart archive manager with intelligent storage decisions</summary>
   <description>
     <p>TripleWrapper is a modern archive manager for Linux that combines the simplicity of GNOME Disks
     with the real-time performance monitoring of Steam's download graph.</p>
 
-    <p><b>Key features:</b></p>
+    <p><em>Key features:</em></p>
     <ul>
-      <li><b>Smart storage decisions:</b> Automatically detects if there's enough space for safe in-place
+      <li><em>Smart storage decisions:</em> Automatically detects if there's enough space for safe in-place
       rewriting, and redirects to external drives when needed</li>
-      <li><b>Real-time telemetry:</b> Steam-style graph showing read/write/compression speeds in MB/s</li>
-      <li><b>Safe operations:</b> In-place safe principle - original file never modified until new version
+      <li><em>Real-time telemetry:</em> Steam-style graph showing read/write/compression speeds in MB/s</li>
+      <li><em>Safe operations:</em> In-place safe principle - original file never modified until new version
       is verified with checksums</li>
-      <li><b>Native GTK4/Libadwaita:</b> Integrates perfectly with GNOME and other GTK desktops</li>
-      <li><b>Multiple formats:</b> Supports 7z, ZIP, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2, Pixz</li>
-      <li><b>Flatpak sandboxed:</b> Secure by default with explicit filesystem permissions</li>
+      <li><em>Native GTK4/Libadwaita:</em> Integrates perfectly with GNOME and other GTK desktops</li>
+      <li><em>Multiple formats:</em> Supports 7z, ZIP, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2, Pixz</li>
+      <li><em>Flatpak sandboxed:</em> Secure by default with explicit filesystem permissions</li>
     </ul>
 
     <p>Built on top of proven command-line tools (7z, tar, pixz) with a modern Rust core
     and Python/GTK4 frontend.</p>
   </description>
   <launchable type="desktop-id">com.github.triplewrapper.App.desktop</launchable>
-  <url type="homepage">https://github.com/triplewrapper/triplewrapper</url>
-  <url type="bugtracker">https://github.com/triplewrapper/triplewrapper/issues</url>
-  <url type="donation">https://github.com/sponsors/triplewrapper</url>
+  <developer>
+    <name>DinoPathTeam</name>
+  </developer>
+  <url type="homepage">https://github.com/DinoPathTeam/TripleWrapper</url>
+  <url type="bugtracker">https://github.com/DinoPathTeam/TripleWrapper/issues</url>
   <provides>
     <binary>triplewrapper-gui</binary>
   </provides>
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/triplewrapper/triplewrapper/main/screenshots/main.png</image>
+      <image>https://raw.githubusercontent.com/DinoPathTeam/TripleWrapper/main/screenshots/main.png</image>
       <caption>Main window showing archive analysis with Steam-style graph</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/triplewrapper/triplewrapper/main/screenshots/disks.png</caption>
+      <image>https://raw.githubusercontent.com/DinoPathTeam/TripleWrapper/main/screenshots/disks.png</image>
       <caption>Disk selection panel with space analysis</caption>
     </screenshot>
   </screenshots>
   <releases>
     <release version="0.1.0" date="2026-09-07">
-      <description>Initial alpha release</description>
+      <description><p>Initial alpha release</p></description>
     </release>
   </releases>
   <content_rating type="oars-1.1" />
