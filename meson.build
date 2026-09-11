@@ -47,7 +47,7 @@ py.install_sources(
    'triplewrapper_gui/core/bridge.py',
    'triplewrapper_gui/core/models.py',
    'triplewrapper_gui/core/protocol.py'],
-  install_dir: py.get_install_dir() / 'triplewrapper_gui'
+  preserve_path: true
 )
 
 # Executable script
