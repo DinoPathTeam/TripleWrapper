@@ -1,7 +1,7 @@
 {
   "app-id": "com.github.triplewrapper.App",
   "runtime": "org.gnome.Platform",
-  "runtime-version": "46",
+  "runtime-version": "50",
   "sdk": "org.gnome.Sdk",
   "command": "triplewrapper-gui",
   "finish-args": [
@@ -19,7 +19,7 @@
   ],
   "build-options": {
     "env": {
-      "PYTHONPATH": "/app/lib/python3.12/site-packages"
+      "PYTHONPATH": "/app/lib/python3.13/site-packages"
     }
   },
   "cleanup": [

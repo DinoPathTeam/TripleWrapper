@@ -114,7 +114,7 @@ jobs:
 
       - name: Install GNOME SDK
         run: |
-          flatpak install --user -y flathub org.gnome.Platform//46 org.gnome.Sdk//46
+          flatpak install --user -y flathub org.gnome.Platform//50 org.gnome.Sdk//50
 
       - name: Build and install Flatpak
         run: |
