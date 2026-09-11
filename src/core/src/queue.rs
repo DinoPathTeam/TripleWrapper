@@ -561,9 +561,15 @@ impl WorkerQueueRef {
             // Process item
             let result = processor(item.clone()).await;
 
-            // Update status based on result (auto-retry while attempts remain)
+            // Update status based on result (auto-retry while attempts remain).
+            // Space failures are terminal: retrying moves the same gigabytes
+            // against the same full disk, so fail fast with the guidance kept.
             let (status, terminal) = match result {
                 Ok(_) => (QueueItemStatus::Completed, true),
+                Err(e @ TripleWrapperError::NoWorkspace(_)) => {
+                    item.error_message = Some(e.to_string());
+                    (QueueItemStatus::Failed, true)
+                }
                 Err(e) => {
                     item.error_message = Some(e.to_string());
                     if item.retry_count < item.max_retries {

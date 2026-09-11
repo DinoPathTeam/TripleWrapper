@@ -403,6 +403,84 @@ fn password_str(pw: Option<&Password>) -> Option<&str> {
     pw.as_ref().map(|p| p.expose())
 }
 
+/// Preflight an extraction against the OUTPUT disk using real
+/// decompressed totals (listed from the archive when possible).
+/// Aborts before gigabytes move. Pure dry-run otherwise.
+async fn preflight_extract(
+    operator: &ArchiveOperator,
+    engine: &mut StorageEngine,
+    archive: &std::path::Path,
+    out_dir: &std::path::Path,
+    password: Option<&str>,
+) -> Result<()> {
+    let total = match operator.list(archive, password).await {
+        Ok(meta) => meta
+            .entries
+            .iter()
+            .filter(|e| !e.is_directory)
+            .map(|e| e.size)
+            .sum(),
+        // Unlistable (e.g. wrong password): fall back to archive size so
+        // the operation itself — not the preflight — reports the real error.
+        Err(_) => std::fs::metadata(archive).map(|m| m.len()).unwrap_or(0),
+    };
+    engine.check_extract_space(out_dir, total)
+}
+
+/// Preflight an in-place rewrite (modify/clean): real removed bytes from
+/// the archive listing, verdict from the decision engine. A Critical
+/// verdict — or an external workspace we were not given — aborts with
+/// the full user-facing guidance instead of failing mid-rewrite.
+async fn preflight_modify(
+    operator: &ArchiveOperator,
+    engine: &mut StorageEngine,
+    req: &OperationRequest,
+) -> Result<()> {
+    let pw = req.password.as_ref().map(|p| p.expose());
+    let current = std::fs::metadata(&req.archive_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
+    let remove = match operator.list(&req.archive_path, pw).await {
+        Ok(meta) => meta
+            .entries
+            .iter()
+            .filter(|e| {
+                !e.is_directory
+                    && req
+                        .files_to_process
+                        .iter()
+                        .any(|f| e.path == *f || e.path.ends_with(f.as_str()))
+            })
+            .map(|e| e.size)
+            .sum(),
+        Err(_) => 0,
+    };
+    let estimate = engine.calculate_estimate(current, remove, 0, None);
+    match engine.decide_workspace(&req.archive_path, &estimate) {
+        StorageVerdict::CriticalError { message, .. } => {
+            Err(TripleWrapperError::NoWorkspace(message))
+        }
+        StorageVerdict::ExternalRequired {
+            workspace_disk,
+            message,
+            ..
+        } => {
+            if req.workspace_override.is_some() {
+                Ok(())
+            } else {
+                Err(TripleWrapperError::NoWorkspace(format!(
+                    "{message}\nRecomendación: esta operación necesita la caché externa \
+                    indicada arriba; vuelve a lanzarla con esa ruta como workspace \
+                    (p. ej. {} con {:.1} GB libres)",
+                    workspace_disk.mount_point.display(),
+                    workspace_disk.free_gb()
+                )))
+            }
+        }
+        StorageVerdict::InternalOk { .. } => Ok(()),
+    }
+}
+
 async fn cmd_disks(json: bool) -> Result<()> {
     let mut scanner = DiskScanner::new();
     let disks = scanner.scan();
@@ -612,6 +690,18 @@ async fn cmd_run(
         _ => {
             let out_dir = output.map(PathBuf::from).unwrap_or(workspace_path);
             triplewrapper_core::mount::ensure_workspace_ready(&out_dir)?;
+            if let Err(e) = preflight_extract(
+                &operator,
+                &mut StorageEngine::new(Default::default()),
+                &archive_path,
+                &out_dir,
+                pw,
+            )
+            .await
+            {
+                emit_error(&e.to_string());
+                return Err(e);
+            }
             let (tx, mut rx) = mpsc::unbounded_channel();
             let archive_clone = archive_path.clone();
             let out_clone = out_dir.clone();
@@ -718,13 +808,23 @@ async fn cmd_extract(
     // Fail fast with a clear message instead of a cryptic 7z error mid-run.
     triplewrapper_core::mount::ensure_workspace_ready(&out_dir)?;
 
+    let pw = password_str(password.as_ref());
+    // Dry-run the space math first: real decompressed totals vs output disk.
+    preflight_extract(
+        &operator,
+        &mut StorageEngine::new(Default::default()),
+        &archive_path,
+        &out_dir,
+        pw,
+    )
+    .await?;
+
     info!(
         "Extracting {} to {}",
         archive_path.display(),
         out_dir.display()
     );
 
-    let pw = password_str(password.as_ref());
     let stats = if resume {
         let (stats, skipped) = operator
             .resume_extract(&archive_path, &out_dir, None, None, pw)
@@ -1446,6 +1546,30 @@ async fn cmd_queue_start(queue: &mut OperationQueue, workers: usize, _json: bool
                 // gigabytes start flowing through 7z's `-w` flag.
                 if let Some(wd) = item.request.workspace_override.as_deref() {
                     triplewrapper_core::mount::ensure_workspace_ready(wd)?;
+                }
+                // Dry-run the space math first: abort BEFORE gigabytes move.
+                // (Space failures are terminal — retrying changes nothing.)
+                {
+                    let mut engine = StorageEngine::new(Default::default());
+                    match item.request.op_type {
+                        OperationType::Extract | OperationType::Modify => {
+                            let out = item.request.output_path.clone().unwrap_or_else(|| {
+                                std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."))
+                            });
+                            preflight_extract(
+                                &operator,
+                                &mut engine,
+                                &item.request.archive_path,
+                                &out,
+                                pw,
+                            )
+                            .await?;
+                        }
+                        OperationType::Clean => {
+                            preflight_modify(&operator, &mut engine, &item.request).await?;
+                        }
+                        OperationType::Test | OperationType::List => {}
+                    }
                 }
                 // Process the queue item based on its operation type
                 match item.request.op_type {

@@ -203,9 +203,21 @@ impl DiskScanner {
     }
 
     fn is_system_mount(mount: &Path) -> bool {
+        // System paths are never suggested as external destinations.
         matches!(
             mount.to_str().unwrap_or(""),
-            "/" | "/boot" | "/boot/efi" | "/efi" | "/usr" | "/var" | "/etc"
+            "/" | "/boot"
+                | "/boot/efi"
+                | "/efi"
+                | "/usr"
+                | "/var"
+                | "/var/cache"
+                | "/var/log"
+                | "/var/tmp"
+                | "/etc"
+                | "/root"
+                | "/srv"
+                | "/opt"
         )
     }
 
@@ -223,9 +235,12 @@ impl DiskScanner {
     }
 }
 
-/// Cross-platform disk usage using statvfs
+/// Cross-platform disk usage using statvfs.
+/// Public inside the crate: measures the ACTUAL filesystem backing `path`
+/// (tmpfs, nfs, fuse…), unlike the sysinfo inventory which skips virtual
+/// filesystems. This is what space checks must use — never assume root.
 #[cfg(target_family = "unix")]
-fn disk_usage(path: &Path) -> std::io::Result<(u64, u64)> {
+pub(crate) fn disk_usage(path: &Path) -> std::io::Result<(u64, u64)> {
     use libc::statvfs;
     let mut statfs: statvfs = unsafe { std::mem::zeroed() };
     let c_path = std::ffi::CString::new(path.as_os_str().as_bytes())?;

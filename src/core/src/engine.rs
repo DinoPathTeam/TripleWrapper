@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 use tracing::{debug, info, warn};
 
 use crate::types::*;
+use crate::{Result, TripleWrapperError};
 
 /// Configuration for the storage engine
 #[derive(Debug, Clone)]
@@ -211,10 +212,14 @@ impl StorageEngine {
                 "❌ ALMACENAMIENTO INSUFICIENTE EN TODO EL SISTEMA\n\
                 Disco origen '{}': {:.1} GB libres\n\
                 Mejor disco disponible: {:.1} GB libres\n\
-                Se requieren: {:.1} GB para operación segura",
+                Se requieren: {:.1} GB para operación segura\n\
+                Recomendación: libera espacio en '{}' o conecta una unidad \
+                externa con al menos {:.1} GB libres y úsala como destino",
                 source_disk.label,
                 free_space as f64 / 1e9,
                 best_free as f64 / 1e9,
+                space_needed as f64 / 1e9,
+                source_disk.label,
                 space_needed as f64 / 1e9
             ),
         }
@@ -232,6 +237,85 @@ impl StorageEngine {
             .unwrap_or(0);
         let estimate = self.calculate_estimate(current_size, bytes_to_remove, bytes_to_add, None);
         self.decide_workspace(archive_path, &estimate)
+    }
+
+    /// Best non-system disk holding at least `needed` bytes free, if any.
+    /// Used to suggest an alternative destination when space runs out.
+    pub fn best_disk_with_space(&mut self, needed: u64) -> Option<DiskInfo> {
+        let mut candidates: Vec<DiskInfo> = self
+            .get_disks_owned()
+            .into_iter()
+            .filter(|d| !d.is_system && d.free_bytes >= needed)
+            .collect();
+        candidates.sort_by(|a, b| {
+            (!a.is_removable)
+                .cmp(&!b.is_removable)
+                .then_with(|| b.free_bytes.cmp(&a.free_bytes))
+        });
+        candidates.into_iter().next()
+    }
+
+    /// Preflight for extractions: ensures the OUTPUT disk can hold the
+    /// decompressed total plus a safety margin. Pure dry-run — writes
+    /// nothing. On failure returns `NoWorkspace` with the full user-facing
+    /// guidance (free/needed figures + concrete alternative or cleanup tip).
+    ///
+    /// Free space is measured with statvfs directly on `output_dir`, NOT
+    /// from the disk inventory: virtual filesystems (tmpfs, nfs, fuse…)
+    /// are invisible to sysinfo, and falling back to `/` would approve
+    /// operations doomed to die halfway (fail-open). Unknown paths fail
+    /// closed instead.
+    pub fn check_extract_space(
+        &mut self,
+        output_dir: &Path,
+        total_uncompressed: u64,
+    ) -> Result<()> {
+        use crate::disk::disk_usage;
+
+        let needed = total_uncompressed.saturating_add(self.config.safety_margin_bytes);
+        let disks = self.get_disks_owned();
+        // A bare "/" match only means "no specific entry" (e.g. tmpfs mounts
+        // invisible to the inventory): show the real path instead of a label.
+        let label = match self.disk_scanner.find_disk_for_path(output_dir, &disks) {
+            Some(d) if d.mount_point != Path::new("/") => d.label.clone(),
+            _ => output_dir.display().to_string(),
+        };
+        let free_bytes = match disk_usage(output_dir) {
+            Ok((_, free)) => free,
+            Err(e) => {
+                return Err(TripleWrapperError::NoWorkspace(format!(
+                    "❌ No se pudo medir el espacio de '{}': {}. \
+                    Recomendación: verifica que la ruta exista y sea escribible",
+                    output_dir.display(),
+                    e
+                )));
+            }
+        };
+        if free_bytes >= needed {
+            return Ok(());
+        }
+        let suggestion = match self.best_disk_with_space(needed) {
+            Some(best) => format!(
+                "vuelve a intentarlo usando como destino otra ubicación con espacio \
+                (p. ej. {} con {:.1} GB libres)",
+                best.mount_point.display(),
+                best.free_gb()
+            ),
+            None => format!(
+                "ninguna unidad tiene espacio suficiente: libera al menos {:.1} GB",
+                needed as f64 / 1e9
+            ),
+        };
+        Err(TripleWrapperError::NoWorkspace(format!(
+            "❌ Espacio insuficiente para esta operación.\n\
+            Destino '{}': {:.1} GB libres, se necesitan {:.1} GB.\n\
+            Recomendación: libera espacio en '{}' o {}",
+            label,
+            free_bytes as f64 / 1e9,
+            needed as f64 / 1e9,
+            label,
+            suggestion
+        )))
     }
 }
 
@@ -258,6 +342,56 @@ mod tests {
         let est = engine.calculate_estimate(u64::MAX, 0, 0, Some(1.0));
         assert_eq!(est.estimated_final_size, u64::MAX);
         assert_eq!(est.space_needed_for_rewrite, u64::MAX);
+    }
+
+    #[test]
+    fn test_critical_verdict_carries_recommendation() {
+        let mut engine = StorageEngine::new(EngineConfig::default());
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("huge.zip");
+        fs::write(&file, vec![0u8; 100]).unwrap();
+
+        // Absurd demand: no disk on earth complies.
+        let est = CompressionEstimate::new(100, 0, u64::MAX / 2, 1.0);
+        match engine.decide_workspace(&file, &est) {
+            StorageVerdict::CriticalError { message, .. } => {
+                assert!(
+                    message.contains("Recomendación"),
+                    "critical verdict must guide the user, got: {message}"
+                );
+            }
+            other => panic!("Expected CriticalError, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn test_check_extract_space_ok_and_guided_abort() {
+        let mut engine = StorageEngine::new(EngineConfig {
+            safety_margin_bytes: 0,
+            ..Default::default()
+        });
+        let dir = tempdir().unwrap();
+
+        // Tiny demand on a real disk: passes.
+        engine.check_extract_space(dir.path(), 1024).unwrap();
+
+        // Impossible demand: aborts with actionable guidance, not a bare error.
+        let err = engine
+            .check_extract_space(dir.path(), u64::MAX)
+            .unwrap_err();
+        let msg = format!("{err:?}");
+        assert!(msg.contains("NoWorkspace"), "got: {msg}");
+        let text = err.to_string();
+        assert!(text.contains("Recomendación"), "got: {text}");
+    }
+
+    #[test]
+    fn test_best_disk_with_space_prefers_options() {
+        let mut engine = StorageEngine::new(EngineConfig::default());
+        // 1 byte fits somewhere on any real machine.
+        assert!(engine.best_disk_with_space(1).is_some());
+        // Nothing fits u64::MAX.
+        assert!(engine.best_disk_with_space(u64::MAX).is_none());
     }
 
     #[test]

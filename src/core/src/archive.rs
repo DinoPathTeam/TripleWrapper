@@ -266,10 +266,11 @@ impl ArchiveOperator {
         let mut entries = Vec::new();
 
         while let Some(line) = reader.next_line().await? {
-            // tar -tv output: -rw-r--r-- user/group size date time path
+            // GNU tar -tv columns: perms owner SIZE date time name...
+            // (size is index 2; index 3 is the date and never parses).
             let parts: Vec<&str> = line.split_whitespace().collect();
             if parts.len() >= 6 {
-                let size = parts[3].parse().unwrap_or(0);
+                let size = parts[2].parse().unwrap_or(0);
                 let path = parts[5..].join(" ");
                 let is_dir = parts[0].starts_with('d') || path.ends_with('/');
 
@@ -426,13 +427,20 @@ impl ArchiveOperator {
             }
         })?;
 
-        // Monitor progress from stderr
+        // Monitor progress from stderr. The tail is kept so failures
+        // report real tool output instead of an empty message (the pipe
+        // is already consumed here and unavailable later).
         let mut bytes_written = 0u64;
+        let mut err_tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
         if let Some(stderr) = child.stderr.take() {
             let mut reader = BufReader::new(stderr).lines();
             let mut last_update = Instant::now();
 
             while let Some(line) = reader.next_line().await? {
+                if err_tail.len() >= 5 {
+                    err_tail.pop_front();
+                }
+                err_tail.push_back(line.clone());
                 // Parse 7z progress output
                 if let Some(progress) = Self::parse_7z_progress(&line) {
                     bytes_written = progress;
@@ -465,14 +473,17 @@ impl ArchiveOperator {
         stats.duration = start.elapsed();
 
         if !status.success() {
-            let stderr = if let Some(mut stderr) = child.stderr.take() {
-                let mut buf = Vec::new();
-                use tokio::io::AsyncReadExt;
-                let _ = stderr.read_to_end(&mut buf).await;
-                String::from_utf8_lossy(&buf).to_string()
-            } else {
-                String::new()
-            };
+            // The stderr pipe was already consumed by the progress loop
+            // above, so report its tail (e.g. ENOSPC / wrong password).
+            let mut stderr: String = err_tail.into_iter().collect::<Vec<_>>().join("\n");
+            if stderr.is_empty() {
+                if let Some(mut remaining) = child.stderr.take() {
+                    let mut buf = Vec::new();
+                    use tokio::io::AsyncReadExt;
+                    let _ = remaining.read_to_end(&mut buf).await;
+                    stderr = String::from_utf8_lossy(&buf).to_string();
+                }
+            }
             return Err(TripleWrapperError::CompressionFailed(stderr));
         }
 
@@ -991,6 +1002,37 @@ mod tests {
             msg.contains("pixz"),
             "error should name the missing tool, got: {msg}"
         );
+    }
+
+    #[tokio::test]
+    async fn test_list_tar_reports_real_sizes() {
+        // Regression: GNU tar columns are [perms owner SIZE date time name];
+        // reading index 3 (the date) silently yielded 0 for every entry,
+        // which also defeated space preflight for all tar formats.
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("sized.txt"), vec![0u8; 4096]).unwrap();
+        let archive = dir.path().join("sized.tar");
+        let status = std::process::Command::new("tar")
+            .args(["-cf"])
+            .arg(&archive)
+            .arg("-C")
+            .arg(dir.path())
+            .arg("sized.txt")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
+        if !status.map(|s| s.success()).unwrap_or(false) {
+            eprintln!("SKIP: tar not available");
+            return;
+        }
+        let op = ArchiveOperator::new().unwrap();
+        let meta = op.list(&archive, None).await.unwrap();
+        let entry = meta
+            .entries
+            .iter()
+            .find(|e| e.path.ends_with("sized.txt"))
+            .expect("entry missing");
+        assert_eq!(entry.size, 4096);
     }
 
     #[tokio::test]
