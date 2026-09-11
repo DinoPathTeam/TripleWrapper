@@ -1,0 +1,5 @@
+# Pinned toolchain: local `cargo fmt`/`clippy` must produce byte-identical
+# output to CI. Never rely on floating "stable" for gating checks.
+[toolchain]
+channel = "1.98.1"
+components = ["rustfmt", "clippy"]
