@@ -50,8 +50,8 @@ py.install_sources(
   preserve_path: true
 )
 
-# Executable script
-exe = py.install_script('triplewrapper-gui', install_dir: get_option('bindir'))
+# Executable script (install_data preserves the +x bit tracked in git)
+install_data('triplewrapper-gui', install_dir: get_option('bindir'))
 
 # Summary
 summary({
