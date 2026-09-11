@@ -57,5 +57,6 @@ class StorageDonut(Gtk.DrawingArea):
 
     @staticmethod
     def _parse_color(hex_color: str) -> tuple[float, float, float, float]:
-        rgba = Gdk.RGBA.parse(hex_color)
+        rgba = Gdk.RGBA()
+        rgba.parse(hex_color)
         return (rgba.red, rgba.green, rgba.blue, rgba.alpha)

@@ -146,7 +146,8 @@ class ProgressView(Gtk.Box):
 
     @staticmethod
     def _draw_swatch(ctx, color: str) -> None:
-        rgba = Gdk.RGBA.parse(color)
+        rgba = Gdk.RGBA()
+        rgba.parse(color)
         ctx.set_source_rgba(rgba.red, rgba.green, rgba.blue, rgba.alpha)
         ctx.rectangle(0, 0, 12, 12)
         ctx.fill()

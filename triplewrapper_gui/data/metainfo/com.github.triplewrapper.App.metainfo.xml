@@ -36,11 +36,11 @@
   <screenshots>
     <screenshot type="default">
       <image>https://raw.githubusercontent.com/DinoPathTeam/TripleWrapper/main/screenshots/main.png</image>
-      <caption>Main window showing archive analysis with Steam-style graph</caption>
+      <caption>Main window showing archive analysis with storage breakdown</caption>
     </screenshot>
     <screenshot>
       <image>https://raw.githubusercontent.com/DinoPathTeam/TripleWrapper/main/screenshots/disks.png</image>
-      <caption>Disk selection panel with space analysis</caption>
+      <caption>Unmounted devices and operation queue</caption>
     </screenshot>
   </screenshots>
   <releases>

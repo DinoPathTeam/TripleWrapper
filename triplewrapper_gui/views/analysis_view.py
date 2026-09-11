@@ -254,7 +254,7 @@ class AnalysisView(Gtk.Box):
             ("Espacio libre en origen", report.human_free_source),
             ("Estado", report.status_label),
         ]:
-            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+            row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             row.append(Gtk.Label(label=label, xalign=0))
             spacer = Gtk.Box()
             spacer.set_hexpand(True)
@@ -324,7 +324,8 @@ class AnalysisView(Gtk.Box):
     # --------------------------------------------------------------- Helpers
     @staticmethod
     def _draw_swatch(ctx, color: str) -> None:
-        rgba = Gdk.RGBA.parse(color)
+        rgba = Gdk.RGBA()
+        rgba.parse(color)
         ctx.set_source_rgba(rgba.red, rgba.green, rgba.blue, rgba.alpha)
         ctx.rectangle(0, 0, 12, 12)
         ctx.fill()
