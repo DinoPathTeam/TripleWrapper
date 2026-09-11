@@ -9,7 +9,6 @@
     "--socket=wayland",
     "--socket=fallback-x11",
     "--device=dri",
-    "--filesystem=host:ro",
     "--filesystem=xdg-documents:rw",
     "--filesystem=xdg-download:rw",
     "--filesystem=xdg-run/media:rw",
