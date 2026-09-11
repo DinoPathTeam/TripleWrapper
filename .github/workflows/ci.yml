@@ -67,6 +67,17 @@ jobs:
       - name: Run tests
         run: pytest tests/unit -v
 
+      - name: Guard meson install list matches tree
+        run: |
+          python3 -c "
+          import re, pathlib
+          listed = set(re.findall(r\"'(triplewrapper_gui/[^']+\.py)'\", open('meson.build').read()))
+          actual = {str(p) for p in pathlib.Path('triplewrapper_gui').rglob('*.py') if '__pycache__' not in str(p)}
+          missing, extra = sorted(actual - listed), sorted(listed - actual)
+          assert not missing and not extra, f'meson install list out of sync: missing={missing} extra={extra}'
+          print(f'meson install list OK ({len(actual)} files)')
+          "
+
   # Integration test
   integration:
     name: Integration Test
@@ -92,7 +103,7 @@ jobs:
 
       - name: Test GUI syntax and protocol
         run: |
-          python3 -m py_compile triplewrapper_gui/main.py triplewrapper_gui/application.py triplewrapper_gui/main_window.py triplewrapper_gui/views/welcome_view.py triplewrapper_gui/views/analysis_view.py triplewrapper_gui/views/progress_view.py triplewrapper_gui/widgets/steam_graph.py triplewrapper_gui/widgets/storage_donut.py triplewrapper_gui/widgets/queue_panel.py triplewrapper_gui/core/bridge.py triplewrapper_gui/core/models.py triplewrapper_gui/core/protocol.py
+          python3 -m compileall -q triplewrapper_gui
           python3 -c "import sys; sys.path.insert(0,'.'); from triplewrapper_gui.core.protocol import parse_event_line; assert parse_event_line('{\"kind\":\"tick\",\"data\":{}}')[0]=='tick'; print('GUI protocol OK')"
 
   # Flatpak build (non-blocking until Phase 2: needs rust-stable SDK ext,
