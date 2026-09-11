@@ -8,6 +8,7 @@ project('triplewrapper-gui',
 
 # Python dependencies
 python = import('python')
+py = python.find_installation('python3')
 pygobject_dep = dependency('pygobject-3.0', version: '>=3.48')
 gi_dep = dependency('gobject-introspection-1.0', version: '>=1.76')
 cairo_dep = dependency('cairo', version: '>=1.17')
@@ -29,7 +30,7 @@ install_data('triplewrapper_gui/data/metainfo/com.github.triplewrapper.App.metai
 install_data('triplewrapper_gui/data/glib-2.0/schemas/com.github.triplewrapper.App.gschema.xml', install_dir: schemas_dir)
 
 # Python package
-python.install_sources(
+py.install_sources(
   ['triplewrapper_gui/__init__.py',
    'triplewrapper_gui/main.py',
    'triplewrapper_gui/application.py',
@@ -46,11 +47,11 @@ python.install_sources(
    'triplewrapper_gui/core/bridge.py',
    'triplewrapper_gui/core/models.py',
    'triplewrapper_gui/core/protocol.py'],
-  install_dir: python.get_install_dir() / 'triplewrapper_gui'
+  install_dir: py.get_install_dir() / 'triplewrapper_gui'
 )
 
 # Executable script
-exe = python.install_script('triplewrapper-gui', install_dir: get_option('bindir'))
+exe = py.install_script('triplewrapper-gui', install_dir: get_option('bindir'))
 
 # Summary
 summary({
