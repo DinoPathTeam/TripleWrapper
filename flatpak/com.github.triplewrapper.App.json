@@ -3,6 +3,9 @@
   "runtime": "org.gnome.Platform",
   "runtime-version": "50",
   "sdk": "org.gnome.Sdk",
+  "sdk-extensions": [
+    "org.freedesktop.Sdk.Extension.rust-stable"
+  ],
   "command": "triplewrapper-gui",
   "finish-args": [
     "--share=ipc",
@@ -41,18 +44,29 @@
       "name": "triplewrapper-core",
       "buildsystem": "simple",
       "build-commands": [
-        "cargo build --release --manifest-path src/core/Cargo.toml",
+        "cargo --offline fetch --manifest-path src/core/Cargo.toml",
+        "cargo build --offline --release --manifest-path src/core/Cargo.toml",
         "install -Dm755 src/core/target/release/triplewrapper-core /app/bin/triplewrapper-core"
       ],
       "build-options": {
+        "append-path": "/usr/lib/sdk/rust-stable/bin",
         "env": {
-          "CARGO_HOME": "/run/build/triplewrapper/cargo"
+          "CARGO_HOME": "/run/build/triplewrapper-core/cargo",
+          "CARGO_NET_OFFLINE": "true"
         }
       },
       "sources": [
         {
           "type": "dir",
           "path": ".."
+        },
+        "cargo-sources.json",
+        {
+          "type": "shell",
+          "commands": [
+            "mkdir -p .cargo",
+            "cp -vf cargo/config .cargo/config.toml"
+          ]
         }
       ]
     },
