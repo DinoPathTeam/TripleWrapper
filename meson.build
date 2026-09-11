@@ -1,6 +1,6 @@
 # Meson build file for TripleWrapper GUI
 
-project('triplewrapper-gui', 'python',
+project('triplewrapper-gui',
   version: '0.1.0',
   license: 'MIT',
   default_options: ['warning_level=2', 'werror=false']
