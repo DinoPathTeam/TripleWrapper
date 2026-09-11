@@ -26,10 +26,17 @@ class ProgressView(Gtk.Box):
         self._build_ui()
 
     def _build_ui(self) -> None:
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scrolled.set_vexpand(True)
+        scrolled.set_child(content)
+        self.append(scrolled)
+
         title = Gtk.Label(label="Operación en curso")
         title.add_css_class("title-2")
         title.set_halign(Gtk.Align.CENTER)
-        self.append(title)
+        content.append(title)
 
         # Graph card
         graph_card = Gtk.Frame()
@@ -65,13 +72,13 @@ class ProgressView(Gtk.Box):
             legend.append(row)
         graph_box.append(legend)
 
-        self.append(graph_card)
+        content.append(graph_card)
 
         # Progress bar
         self._progress_bar = Gtk.ProgressBar()
         self._progress_bar.set_show_text(True)
         self._progress_bar.set_text("Preparando…")
-        self.append(self._progress_bar)
+        content.append(self._progress_bar)
 
         # Stats row
         stats = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=24)
@@ -83,7 +90,7 @@ class ProgressView(Gtk.Box):
         for lbl in (self._read_lbl, self._write_lbl, self._compress_lbl):
             stats.append(lbl)
 
-        self.append(stats)
+        content.append(stats)
 
         # Actions
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)

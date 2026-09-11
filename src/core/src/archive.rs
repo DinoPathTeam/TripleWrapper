@@ -72,6 +72,17 @@ fn push_password_arg(cmd: &mut Command, password: Option<&str>) {
     }
 }
 
+/// Total bytes of regular files under `dir` (follows nothing, skips errors).
+fn dir_size(dir: &Path) -> u64 {
+    walkdir::WalkDir::new(dir)
+        .into_iter()
+        .filter_map(|e| e.ok())
+        .filter(|e| e.file_type().is_file())
+        .filter_map(|e| e.metadata().ok())
+        .map(|m| m.len())
+        .sum()
+}
+
 impl ArchiveOperator {
     pub fn new() -> Result<Self> {
         let sevenz_path = Self::find_tool("7z")?;
@@ -465,7 +476,13 @@ impl ArchiveOperator {
             return Err(TripleWrapperError::CompressionFailed(stderr));
         }
 
-        stats.bytes_written = bytes_written;
+        // tar/pixz emit no per-file progress, so the loop above may have
+        // seen nothing: fall back to the real output size for truthful stats.
+        stats.bytes_written = if bytes_written > 0 {
+            bytes_written
+        } else {
+            dir_size(output_dir)
+        };
         stats.avg_write_mbps =
             stats.bytes_written as f64 / stats.duration.as_secs_f64() / 1_048_576.0;
 

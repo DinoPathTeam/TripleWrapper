@@ -35,10 +35,17 @@ class BrowseView(Gtk.Box):
         self._build_ui()
 
     def _build_ui(self) -> None:
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=18)
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        scrolled.set_vexpand(True)
+        scrolled.set_child(content)
+        self.append(scrolled)
+
         title = Gtk.Label(label="Contenido del archivo")
         title.add_css_class("title-2")
         title.set_halign(Gtk.Align.CENTER)
-        self.append(title)
+        content.append(title)
 
         # Entry list card
         card = Gtk.Frame()
@@ -59,7 +66,7 @@ class BrowseView(Gtk.Box):
         self._list_box.set_selection_mode(Gtk.SelectionMode.NONE)
         scrolled.set_child(self._list_box)
         box.append(scrolled)
-        self.append(card)
+        content.append(card)
 
         # Action bar
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
