@@ -57,8 +57,9 @@
       },
       "sources": [
         {
-          "type": "dir",
-          "path": ".."
+          "type": "git",
+          "url": "https://github.com/DinoPathTeam/TripleWrapper.git",
+          "commit": "b049b5a93ec44e6de7f42c558afc726f8355dc36"
         },
         "cargo-sources.json",
         {
@@ -78,8 +79,9 @@
       ],
       "sources": [
         {
-          "type": "dir",
-          "path": ".."
+          "type": "git",
+          "url": "https://github.com/DinoPathTeam/TripleWrapper.git",
+          "commit": "b049b5a93ec44e6de7f42c558afc726f8355dc36"
         }
       ]
     }
