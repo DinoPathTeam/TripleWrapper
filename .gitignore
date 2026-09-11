@@ -2,7 +2,9 @@
 /target/
 **/target/
 **/*.rs.bk
-Cargo.lock
+# NOTE: Cargo.lock is intentionally TRACKED for src/core (binary crate):
+# CI must resolve byte-identical deps to what was validated locally.
+# (Library-only crates would keep it ignored.)
 
 # Python
 __pycache__/

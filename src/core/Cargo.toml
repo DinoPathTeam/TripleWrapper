@@ -10,7 +10,11 @@ keywords = ["archive", "7z", "compression", "storage", "cache"]
 
 [lib]
 name = "triplewrapper_core"
-crate-type = ["cdylib", "rlib"]  # cdylib for Python CFFI, rlib for Rust tests
+# rlib only: the cdylib-for-Python-CFFI plan never materialized (the GUI
+# speaks CLI+JSON over subprocess) and dual artifacts interact badly with
+# release LTO + panic=abort at link time. Re-add cdylib if/when a real
+# CFFI consumer exists.
+crate-type = ["rlib"]
 
 [dependencies]
 # Async runtime
