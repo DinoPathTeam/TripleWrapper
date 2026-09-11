@@ -9,7 +9,7 @@ project('triplewrapper-gui',
 # Python dependencies
 python = import('python')
 pygobject_dep = dependency('pygobject-3.0', version: '>=3.48')
-gi_dep = dependency('gi', version: '>=3.48')
+gi_dep = dependency('gobject-introspection-1.0', version: '>=1.76')
 cairo_dep = dependency('cairo', version: '>=1.17')
 graphene_dep = dependency('graphene-1.0', version: '>=1.10')
 gtk4_dep = dependency('gtk4', version: '>=4.10')
