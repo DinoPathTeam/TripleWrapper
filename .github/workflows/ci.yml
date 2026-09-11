@@ -106,13 +106,11 @@ jobs:
           python3 -m compileall -q triplewrapper_gui
           python3 -c "import sys; sys.path.insert(0,'.'); from triplewrapper_gui.core.protocol import parse_event_line; assert parse_event_line('{\"kind\":\"tick\",\"data\":{}}')[0]=='tick'; print('GUI protocol OK')"
 
-  # Flatpak build (non-blocking until Phase 2: needs rust-stable SDK ext,
-  # vendored cargo sources for offline builds, and runtime 46->50 migration)
+  # Flatpak build (blocking: SDK 50 + offline Rust build verified green)
   flatpak:
     name: Flatpak Build
     runs-on: ubuntu-latest
     needs: [rust-core, python-gui]
-    continue-on-error: true
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v5
