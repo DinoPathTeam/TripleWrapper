@@ -15,10 +15,6 @@ graphene_dep = dependency('graphene-1.0', version: '>=1.10')
 gtk4_dep = dependency('gtk4', version: '>=4.10')
 libadwaita_dep = dependency('libadwaita-1', version: '>=1.4')
 
-# Check for required modules
-pygobject = python.import('gi')
-pygobject.check_version('3.48')
-
 # Data files
 data_dir = join_paths(get_option('datadir'), 'triplewrapper')
 icon_dir = join_paths(data_dir, 'icons/hicolor/scalable/apps')
