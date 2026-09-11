@@ -1595,32 +1595,36 @@ async fn cmd_queue_start(queue: &mut OperationQueue, workers: usize, _json: bool
                             .await?;
                     }
                     OperationType::Modify => {
-                        // For modify, we'd need more complex logic
-                        // For now, just extract as example
+                        // Modify needs an explicit add-file set which
+                        // OperationRequest doesn't carry: refuse loudly
+                        // instead of silently doing the wrong thing.
+                        return Err(TripleWrapperError::Internal(
+                            "queue Modify needs delete+add file sets; use CLI create/delete directly".into(),
+                        ));
+                    }
+                    OperationType::Clean => {
+                        if item.request.files_to_process.is_empty() {
+                            return Err(TripleWrapperError::Internal(
+                                "queue Clean needs at least one file in files_to_process".into(),
+                            ));
+                        }
                         operator
-                            .extract(
+                            .delete(
                                 &item.request.archive_path,
-                                item.request
-                                    .output_path
-                                    .as_ref()
-                                    .unwrap_or(&std::env::current_dir().unwrap()),
-                                triplewrapper_core::archive::ExtractOptions {
-                                    files: if item.request.files_to_process.is_empty() {
-                                        None
-                                    } else {
-                                        Some(&item.request.files_to_process)
-                                    },
-                                    workdir: item.request.workspace_override.as_deref(),
-                                    password: pw,
-                                    ..Default::default()
-                                },
+                                &item.request.files_to_process,
+                                item.request.workspace_override.as_deref(),
+                                pw,
                             )
                             .await?;
                     }
                     OperationType::Test => {
                         operator.test(&item.request.archive_path, pw).await?;
                     }
-                    _ => {}
+                    OperationType::List => {
+                        return Err(TripleWrapperError::Internal(
+                            "queue List returns data with nowhere to put it; use CLI list".into(),
+                        ));
+                    }
                 }
                 Ok(())
             }

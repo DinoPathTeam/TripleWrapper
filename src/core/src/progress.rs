@@ -19,6 +19,7 @@ pub struct ProgressMonitor {
     current_file: Arc<Mutex<String>>,
     files_total: u32,
     files_processed: Arc<Mutex<u32>>,
+    sysmon: Arc<Mutex<SystemMonitor>>,
 }
 
 impl ProgressMonitor {
@@ -41,6 +42,7 @@ impl ProgressMonitor {
             current_file: Arc::new(Mutex::new(String::new())),
             files_total,
             files_processed: Arc::new(Mutex::new(0)),
+            sysmon: Arc::new(Mutex::new(SystemMonitor::new())),
         };
 
         // Spawn internal aggregator
@@ -51,6 +53,7 @@ impl ProgressMonitor {
         let bytes_compressed_clone = monitor.bytes_compressed.clone();
         let current_file_clone = monitor.current_file.clone();
         let files_processed_clone = monitor.files_processed.clone();
+        let sysmon_clone = monitor.sysmon.clone();
         let files_total = monitor.files_total;
         let start_time = monitor.start_time;
 
@@ -113,6 +116,12 @@ impl ProgressMonitor {
                         None
                     };
 
+                    // Host resources, best effort (zeros when unreadable).
+                    let mut sysmon = sysmon_clone.lock().await;
+                    let cpu_percent = sysmon.read_cpu_percent().unwrap_or(0.0);
+                    let memory_bytes = sysmon.read_memory_bytes().unwrap_or(0);
+                    drop(sysmon);
+
                     let telemetry = ProgressTelemetry {
                         operation_id,
                         status,
@@ -125,8 +134,8 @@ impl ProgressMonitor {
                         bytes_per_second_write: write_speed,
                         bytes_per_second_compress: compress_speed,
                         eta_seconds: eta,
-                        cpu_percent: 0.0, // TODO: read from /proc/self/stat
-                        memory_bytes: 0,  // TODO: read from /proc/self/status
+                        cpu_percent,
+                        memory_bytes,
                     };
 
                     let _ = telemetry_tx_clone.send(telemetry);
@@ -182,6 +191,10 @@ impl ProgressMonitor {
 
     /// Get current stats snapshot
     pub async fn snapshot(&self) -> ProgressTelemetry {
+        let mut sysmon = self.sysmon.lock().await;
+        let cpu_percent = sysmon.read_cpu_percent().unwrap_or(0.0);
+        let memory_bytes = sysmon.read_memory_bytes().unwrap_or(0);
+        drop(sysmon);
         ProgressTelemetry {
             operation_id: self.operation_id,
             status: *self.status.lock().await,
@@ -194,8 +207,8 @@ impl ProgressMonitor {
             bytes_per_second_write: 0.0,
             bytes_per_second_compress: 0.0,
             eta_seconds: None,
-            cpu_percent: 0.0,
-            memory_bytes: 0,
+            cpu_percent,
+            memory_bytes,
         }
     }
 
@@ -252,6 +265,19 @@ impl SystemMonitor {
         }
 
         Some((read_bytes, write_bytes))
+    }
+
+    /// Read resident memory (VmRSS) from /proc/<pid>/status, in bytes.
+    pub fn read_memory_bytes(&mut self) -> Option<u64> {
+        let path = format!("/proc/{}/status", self.pid);
+        let content = std::fs::read_to_string(&path).ok()?;
+        for line in content.lines() {
+            if let Some(rest) = line.strip_prefix("VmRSS:") {
+                let kb: u64 = rest.split_whitespace().next()?.parse().ok()?;
+                return Some(kb.saturating_mul(1024));
+            }
+        }
+        None
     }
 
     /// Read CPU usage from /proc/<pid>/stat

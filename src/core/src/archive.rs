@@ -139,14 +139,14 @@ impl ArchiveOperator {
     pub async fn list(&self, archive: &Path, password: Option<&str>) -> Result<ArchiveMetadata> {
         let format = resolve_format(archive)?;
 
-        let (entries, encrypted) = match format {
+        let (entries, encrypted, solid) = match format {
             ArchiveFormat::SevenZ | ArchiveFormat::Zip => self.list_7z(archive, password).await?,
             ArchiveFormat::Tar
             | ArchiveFormat::TarGz
             | ArchiveFormat::TarXz
             | ArchiveFormat::TarZst
-            | ArchiveFormat::TarBz2 => (self.list_tar(archive).await?, false),
-            ArchiveFormat::Pixz => (self.list_pixz(archive).await?, false),
+            | ArchiveFormat::TarBz2 => (self.list_tar(archive).await?, false, false),
+            ArchiveFormat::Pixz => (self.list_pixz(archive).await?, false, false),
         };
 
         let size = std::fs::metadata(archive)?.len();
@@ -156,7 +156,7 @@ impl ArchiveOperator {
             format,
             size,
             entries,
-            solid: false, // TODO: detect solid archives
+            solid,
             encrypted,
             comment: None,
         })
@@ -166,7 +166,7 @@ impl ArchiveOperator {
         &self,
         archive: &Path,
         password: Option<&str>,
-    ) -> Result<(Vec<ArchiveEntry>, bool)> {
+    ) -> Result<(Vec<ArchiveEntry>, bool, bool)> {
         let mut list_cmd = Command::new(&self.sevenz_path);
         list_cmd.args(["l", "-slt", "-ba", archive.to_str().unwrap()]);
         push_password_arg(&mut list_cmd, password);
@@ -185,6 +185,9 @@ impl ArchiveOperator {
         let mut entries = Vec::new();
         let mut current_entry: Option<ArchiveEntry> = None;
         let mut encrypted = false;
+        // `-ba` (bare) suppresses the archive header where `Solid = +`
+        // lives, so probe it separately with a plain listing.
+        let mut solid = false;
 
         while let Some(line) = reader.next_line().await? {
             if line.starts_with("----------") {
@@ -199,6 +202,11 @@ impl ArchiveOperator {
                     "Encrypted" => {
                         if value.trim() == "+" {
                             encrypted = true;
+                        }
+                    }
+                    "Solid" => {
+                        if value.trim() == "+" {
+                            solid = true;
                         }
                     }
                     "Path" => {
@@ -248,7 +256,20 @@ impl ArchiveOperator {
             entries.push(e);
         }
 
-        Ok((entries, encrypted))
+        if let Ok(probe) = Command::new(&self.sevenz_path)
+            .args(["l", archive.to_str().unwrap_or("")])
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .output()
+            .await
+        {
+            solid = String::from_utf8_lossy(&probe.stdout)
+                .lines()
+                .any(|l| l.trim() == "Solid = +");
+        }
+
+        Ok((entries, encrypted, solid))
     }
 
     async fn list_tar(&self, archive: &Path) -> Result<Vec<ArchiveEntry>> {
@@ -1033,6 +1054,33 @@ mod tests {
             .find(|e| e.path.ends_with("sized.txt"))
             .expect("entry missing");
         assert_eq!(entry.size, 4096);
+    }
+
+    #[tokio::test]
+    async fn test_solid_detection() {
+        let Some(op) = sevenz() else { return };
+        let dir = tempfile::tempdir().unwrap();
+        // Solid blocks need 2+ files: single-file archives report Solid = -.
+        std::fs::write(dir.path().join("a.txt"), b"aaa").unwrap();
+        std::fs::write(dir.path().join("b.txt"), b"bbb").unwrap();
+        for (name, solid_flag, expected) in [
+            ("s.7z", "-ms=on", true),
+            ("n.7z", "-ms=off", false),
+        ] {
+            let archive = dir.path().join(name);
+            let status = std::process::Command::new("7z")
+                .args(["a", solid_flag])
+                .arg(&archive)
+                .arg(dir.path().join("a.txt"))
+                .arg(dir.path().join("b.txt"))
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .status()
+                .unwrap();
+            assert!(status.success());
+            let meta = op.list(&archive, None).await.unwrap();
+            assert_eq!(meta.solid, expected, "solid flag for {name}");
+        }
     }
 
     #[tokio::test]
