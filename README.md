@@ -5,7 +5,7 @@
 > **Smart archive manager with intelligent storage decisions**  
 > *Combining GNOME Disks simplicity with Steam's real-time performance graphs*
 
-![TripleWrapper](https://img.shields.io/badge/version-0.1.0--alpha-orange)
+![TripleWrapper](https://img.shields.io/badge/version-1.0.0-blue)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Rust](https://img.shields.io/badge/rust-1.75+-orange)
 ![Python](https://img.shields.io/badge/python-3.11+-blue)
@@ -64,10 +64,10 @@ Instead of failing with a generic error, TripleWrapper:
 ### Flatpak (Recommended)
 ```bash
 # From Flathub (once published)
-flatpak install flathub com.triplewrapper.TripleWrapper
+flatpak install flathub io.github.dinopathtream.TripleWrapper
 
 # Or build locally
-flatpak-builder --user --install --force-clean build-dir flatpak/com.triplewrapper.TripleWrapper.json
+flatpak-builder --user --install --force-clean build-dir flatpak/io.github.dinopathtream.TripleWrapper.json
 ```
 
 ### From Source
@@ -176,8 +176,8 @@ pytest tests/unit -v
 ### Building Flatpak
 ```bash
 flatpak-builder --force-clean --user --install-deps-from=flathub \
-  build-dir flatpak/com.github.triplewrapper.App.json
-flatpak run --command=triplewrapper-gui com.github.triplewrapper.App
+  build-dir flatpak/io.github.dinopathtream.TripleWrapper.json
+flatpak run --command=triplewrapper-gui io.github.dinopathtream.TripleWrapper
 ```
 
 ## Contributing

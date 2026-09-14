@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <component type="desktop-application">
-  <id>com.github.triplewrapper.App</id>
+  <id>io.github.dinopathtream.TripleWrapper</id>
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>MIT</project_license>
   <name>TripleWrapper</name>
@@ -24,7 +24,7 @@
     <p>Built on top of proven command-line tools (7z, tar, pixz) with a modern Rust core
     and Python/GTK4 frontend.</p>
   </description>
-  <launchable type="desktop-id">com.github.triplewrapper.App.desktop</launchable>
+  <launchable type="desktop-id">io.github.dinopathtream.TripleWrapper.desktop</launchable>
   <developer>
     <name>DinoPathTeam</name>
   </developer>
@@ -44,6 +44,9 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.0" date="2026-09-14">
+      <description><p>First stable release: local-only archive manager with smart storage decisions, real-time telemetry, AES support and Flatpak distribution</p></description>
+    </release>
     <release version="0.1.0" date="2026-09-07">
       <description><p>Initial alpha release</p></description>
     </release>

@@ -6,8 +6,8 @@ from .application import TripleWrapperApplication
 
 def main() -> int:
     app = TripleWrapperApplication(
-        application_id="com.github.triplewrapper.App",
-        resourcebasepath="/com/github/triplewrapper/",
+        application_id="io.github.dinopathtream.TripleWrapper",
+        resourcebasepath="/io/github/dinopathtream/TripleWrapper/",
     )
     return int(app.run(sys.argv))
 

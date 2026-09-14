@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <schemalist>
-  <schema id="com.github.triplewrapper.App" path="/com/github/triplewrapper/app/">
+  <schema id="io.github.dinopathtream.TripleWrapper" path="/io/github/dinopathtream/triplewrapper/">
     <key name="default-compression-level" type="i">
       <default>5</default>
       <summary>Default compression level</summary>

@@ -1,6 +1,6 @@
 [project]
 name = "triplewrapper-gui"
-version = "0.1.0"
+version = "1.0.0"
 description = "GTK4/Libadwaita GUI for TripleWrapper"
 readme = "README.md"
 license = {text = "MIT"}
