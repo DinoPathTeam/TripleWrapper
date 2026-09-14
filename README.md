@@ -215,6 +215,7 @@ flatpak run --command=triplewrapper-gui com.github.triplewrapper.App
 - [x] **v0.3**: Local avanzado (archivos cifrados 7z AES, reanudar operaciones grandes, base local de integridad)
 - [x] **v0.4**: Plugin system local (ejecutables `triplewrapper-*`, contrato en `docs/API.md`)
 - [ ] **v1.0**: Stable API, Flathub publication
+- [ ] **v1.1**: Full i18n (gettext, English source + `es.po`, system locale; Spanish UI ships under Flathub's new-submission exception until then)
 
 > **Principio local-only**: sin backends cloud (fuera rclone), sin telemetría externa,
 > sin dependencias de red para operar. Los mounts de red (`/mnt`, NFS/SMB) se tratan
