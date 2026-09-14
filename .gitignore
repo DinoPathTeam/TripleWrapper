@@ -69,3 +69,5 @@ coverage/
 *.deb
 *.rpm
 *.AppImage
+# Local flathub fork workspace (never commit)
+flathub/
