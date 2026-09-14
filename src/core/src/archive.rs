@@ -2,7 +2,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::process::Command;
 use tracing::{debug, info};
@@ -81,6 +81,33 @@ pub(crate) fn dir_size(dir: &Path) -> u64 {
         .filter_map(|e| e.metadata().ok())
         .map(|m| m.len())
         .sum()
+}
+
+/// Throughput in MB/s for a byte delta over `dt_secs` (zero-safe).
+fn mbps(delta_bytes: u64, dt_secs: f64) -> f64 {
+    if dt_secs > 0.0 {
+        delta_bytes as f64 / dt_secs / 1_048_576.0
+    } else {
+        0.0
+    }
+}
+
+/// Bytes read+written by a process (`rchar`/`wchar`), best effort.
+/// Used to measure real child throughput when tool outputs carry none.
+fn proc_io(pid: u32) -> (u64, u64) {
+    let content = std::fs::read_to_string(format!("/proc/{pid}/io")).unwrap_or_default();
+    let mut read = 0u64;
+    let mut written = 0u64;
+    for line in content.lines() {
+        if let Some((key, value)) = line.split_once(':') {
+            match key.trim() {
+                "rchar" => read = value.trim().parse().unwrap_or(0),
+                "wchar" => written = value.trim().parse().unwrap_or(0),
+                _ => {}
+            }
+        }
+    }
+    (read, written)
 }
 
 impl ArchiveOperator {
@@ -482,7 +509,9 @@ impl ArchiveOperator {
         };
 
         cmd.stdin(Stdio::null());
-        cmd.stdout(Stdio::piped()).stderr(Stdio::piped());
+        // Stdout is unread (tool progress lines carry no byte counts on
+        // extract); leaving it piped risks deadlock on large outputs.
+        cmd.stdout(Stdio::null()).stderr(Stdio::piped());
 
         log_command(&cmd);
 
@@ -495,74 +524,78 @@ impl ArchiveOperator {
                 TripleWrapperError::Io(e)
             }
         })?;
+        let child_pid = child.id().unwrap_or(0);
 
-        // Monitor progress from stderr. The tail is kept so failures
-        // report real tool output instead of an empty message (the pipe
-        // is already consumed here and unavailable later).
-        let mut bytes_written = 0u64;
-        let mut err_tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
-        if let Some(stderr) = child.stderr.take() {
-            let mut reader = BufReader::new(stderr).lines();
-            let mut last_update = Instant::now();
-
-            while let Some(line) = reader.next_line().await? {
-                if err_tail.len() >= 5 {
-                    err_tail.pop_front();
-                }
-                err_tail.push_back(line.clone());
-                // Parse 7z progress output
-                if let Some(progress) = Self::parse_7z_progress(&line) {
-                    bytes_written = progress;
-
-                    if last_update.elapsed().as_millis() >= 100 {
-                        if let Some(ref tx) = progress_tx {
-                            let _ = tx.send(ProgressTelemetry {
-                                operation_id: OperationId::new(),
-                                status: OperationStatus::Running,
-                                current_file: line.clone(),
-                                files_total: 0,
-                                files_processed: 0,
-                                bytes_total: 0,
-                                bytes_processed: bytes_written,
-                                bytes_per_second_read: 0.0,
-                                bytes_per_second_write: 0.0,
-                                bytes_per_second_compress: 0.0,
-                                eta_seconds: None,
-                                cpu_percent: 0.0,
-                                memory_bytes: 0,
-                            });
-                        }
-                        last_update = Instant::now();
+        // Stderr tail collector (error reporting only): progress comes
+        // from polling below, since tool outputs carry no byte counts.
+        let stderr = child.stderr.take();
+        let tail_task = tokio::spawn(async move {
+            let mut tail: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+            if let Some(pipe) = stderr {
+                let mut reader = BufReader::new(pipe).lines();
+                while let Ok(Some(line)) = reader.next_line().await {
+                    if tail.len() >= 5 {
+                        tail.pop_front();
                     }
+                    tail.push_back(line);
                 }
             }
-        }
+            tail
+        });
 
-        let status = child.wait().await?;
+        // Tool-agnostic telemetry: poll output size (progress + write
+        // rate) and child I/O counters (read rate) on a timer.
+        let mut last_out = 0u64;
+        let mut last_read = 0u64;
+        let mut last_t = Instant::now();
+        let mut ticker = tokio::time::interval(Duration::from_millis(200));
+        let status = loop {
+            tokio::select! {
+                _ = ticker.tick() => {
+                    let out = dir_size(output_dir);
+                    let dt = last_t.elapsed().as_secs_f64();
+                    let (read_bytes, _) = proc_io(child_pid);
+                    if let Some(ref tx) = progress_tx {
+                        let _ = tx.send(ProgressTelemetry {
+                            operation_id: OperationId::new(),
+                            status: OperationStatus::Running,
+                            current_file: String::new(),
+                            files_total: 0,
+                            files_processed: 0,
+                            bytes_total: 0,
+                            bytes_processed: out,
+                            bytes_per_second_read: mbps(
+                                read_bytes.saturating_sub(last_read),
+                                dt,
+                            ),
+                            bytes_per_second_write: mbps(
+                                out.saturating_sub(last_out),
+                                dt,
+                            ),
+                            eta_seconds: None,
+                            cpu_percent: 0.0,
+                            memory_bytes: 0,
+                            bytes_per_second_compress: 0.0,
+                        });
+                    }
+                    last_out = out;
+                    last_read = read_bytes;
+                    last_t = Instant::now();
+                }
+                status = child.wait() => break status?,
+            }
+        };
         stats.duration = start.elapsed();
 
+        let tail = tail_task.await.unwrap_or_default();
         if !status.success() {
-            // The stderr pipe was already consumed by the progress loop
-            // above, so report its tail (e.g. ENOSPC / wrong password).
-            let mut stderr: String = err_tail.into_iter().collect::<Vec<_>>().join("\n");
-            if stderr.is_empty() {
-                if let Some(mut remaining) = child.stderr.take() {
-                    let mut buf = Vec::new();
-                    use tokio::io::AsyncReadExt;
-                    let _ = remaining.read_to_end(&mut buf).await;
-                    stderr = String::from_utf8_lossy(&buf).to_string();
-                }
-            }
+            // The stderr pipe was already consumed by the collector above,
+            // so report its tail (e.g. ENOSPC / wrong password).
+            let stderr: String = tail.into_iter().collect::<Vec<_>>().join("\n");
             return Err(TripleWrapperError::CompressionFailed(stderr));
         }
 
-        // tar/pixz emit no per-file progress, so the loop above may have
-        // seen nothing: fall back to the real output size for truthful stats.
-        stats.bytes_written = if bytes_written > 0 {
-            bytes_written
-        } else {
-            dir_size(output_dir)
-        };
+        stats.bytes_written = dir_size(output_dir);
         stats.avg_write_mbps =
             stats.bytes_written as f64 / stats.duration.as_secs_f64() / 1_048_576.0;
 
@@ -855,26 +888,6 @@ impl ArchiveOperator {
         let status = child.wait().await?;
         Ok(status.success())
     }
-
-    /// Parse 7z progress line for bytes written
-    fn parse_7z_progress(line: &str) -> Option<u64> {
-        // 7z output examples:
-        // "Compressing  file.txt  1234567  45%"
-        // "Extracting  file.dat  987654321"
-
-        if line.contains("Compressing") || line.contains("Extracting") {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            for part in parts {
-                if let Ok(bytes) = part.parse::<u64>() {
-                    if bytes > 1000 {
-                        // Heuristic: size in bytes
-                        return Some(bytes);
-                    }
-                }
-            }
-        }
-        None
-    }
 }
 
 impl Default for ArchiveOperator {
@@ -902,6 +915,13 @@ impl Default for OperationStats {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_mbps_math() {
+        assert!((mbps(1_048_576, 1.0) - 1.0).abs() < 1e-9);
+        assert_eq!(mbps(0, 1.0), 0.0);
+        assert_eq!(mbps(100, 0.0), 0.0);
+    }
 
     #[tokio::test]
     async fn test_find_tools() {
