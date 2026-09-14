@@ -560,7 +560,13 @@ fn analysis_report_from_verdict(
                 "needed_bytes": estimate.space_needed_for_rewrite,
                 "free_bytes": source_disk.free_bytes,
                 "external_free_bytes": null,
-                "suggested_workspace": source_disk.mount_point,
+                // In-place workspace: the archive's own directory (same
+                // filesystem for atomicity, user-writable, and bounded for
+                // progress polling) — never the bare mount point.
+                "suggested_workspace": std::path::Path::new(archive)
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| source_disk.mount_point.clone()),
                 "status": "ok",
                 "status_label": message,
                 "blake3_expected": "",
@@ -693,7 +699,10 @@ async fn cmd_run(
         }
         _ => {
             let out_dir = output.map(PathBuf::from).unwrap_or(workspace_path);
-            triplewrapper_core::mount::ensure_workspace_ready(&out_dir)?;
+            if let Err(e) = triplewrapper_core::mount::ensure_workspace_ready(&out_dir) {
+                emit_error(&e.to_string());
+                return Err(e);
+            }
             if let Err(e) = preflight_extract(
                 &operator,
                 &mut StorageEngine::new(Default::default()),

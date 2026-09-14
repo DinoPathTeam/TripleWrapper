@@ -548,10 +548,20 @@ impl ArchiveOperator {
         let mut last_out = 0u64;
         let mut last_read = 0u64;
         let mut last_t = Instant::now();
-        let mut ticker = tokio::time::interval(Duration::from_millis(200));
+        let mut baseline = true;
+        let mut ticker = tokio::time::interval(Duration::from_millis(100));
         let status = loop {
             tokio::select! {
                 _ = ticker.tick() => {
+                    // First tick only sets baselines: interval fires
+                    // immediately, so dt would be ~0 and rates garbage.
+                    if baseline {
+                        baseline = false;
+                        last_out = dir_size(output_dir);
+                        last_read = proc_io(child_pid).0;
+                        last_t = Instant::now();
+                        continue;
+                    }
                     let out = dir_size(output_dir);
                     let dt = last_t.elapsed().as_secs_f64();
                     let (read_bytes, _) = proc_io(child_pid);
