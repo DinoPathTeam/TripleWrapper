@@ -366,6 +366,28 @@ msgstr "Running: {n}"
 msgid "Pausados: {n}"
 msgstr "Paused: {n}"
 
+# --- status composition (analysis_view.status_message) ---
+
+msgid "Espacio suficiente en '{label}' ({free:.1f} GB libres / {required:.1f} GB requeridos)"
+msgstr "Enough space on '{label}' ({free:.1f} GB free / {required:.1f} GB required)"
+
+msgid "Espacio insuficiente en '{label}' ({free:.1f} GB libres, se necesitan {required:.1f} GB). Usando caché en '{wlabel}' ({wfree:.1f} GB libres en {wmount})"
+msgstr "Not enough space on '{label}' ({free:.1f} GB free, {required:.1f} GB needed). Using cache on '{wlabel}' ({wfree:.1f} GB free on {wmount})"
+
+msgid "Espacio insuficiente para esta operación. Destino '{label}': {free:.1f} GB libres, se necesitan {required:.1f} GB."
+msgstr "Not enough space for this operation. Target '{label}': {free:.1f} GB free, {required:.1f} GB needed."
+
+# --- dialog buttons ---
+
+msgid "Abrir"
+msgstr "Open"
+
+msgid "Elegir"
+msgstr "Choose"
+
+msgid "Añadir"
+msgstr "Add"
+
 msgid ""
 "· La app muestra el motivo en un aviso: sin espacio, sin permiso o archivo "
 "dañado.\n"

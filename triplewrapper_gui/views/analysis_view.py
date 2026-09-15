@@ -265,7 +265,7 @@ class AnalysisView(Gtk.Box):
             (_("Tamaño del archivo"), report.human_archive),
             (_("Espacio necesario (in-place)"), report.human_needed),
             (_("Espacio libre en origen"), report.human_free_source),
-            (_("Estado"), report.status_label),
+            (_("Estado"), self.status_message(report)),
         ]:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             row.append(Gtk.Label(label=label, xalign=0))
@@ -285,7 +285,7 @@ class AnalysisView(Gtk.Box):
         else:
             self._crypto_label.set_label(_("Sin cifrado detectado"))
         self._integrity_label.set_label(_("Integridad local: consultando…"))
-        self._ws_status.set_label(report.status_label)
+        self._ws_status.set_label(self.status_message(report))
         self._ws_status.remove_css_class("success")
         self._ws_status.remove_css_class("warning")
         self._ws_status.remove_css_class("error")
@@ -300,6 +300,35 @@ class AnalysisView(Gtk.Box):
     def get_selected_workspace(self) -> str | None:
         return self._selected_workspace
 
+    @staticmethod
+    def status_message(report: AnalysisReport) -> str:
+        """Localized status line from structured atoms.
+
+        Falls back to the core's Spanish label when atoms are absent
+        (older core): never blank, never misleading.
+        """
+        label = report.source_label
+        free_gb = report.free_bytes / 1e9
+        needed_gb = report.needed_bytes / 1e9
+        if report.status == "ok" and label:
+            return _("Espacio suficiente en '{label}' ({free:.1f} GB libres / "
+                     "{required:.1f} GB requeridos)").format(
+                         label=label, free=free_gb, required=needed_gb)
+        if report.status == "external" and label and report.workspace_label:
+            ext_free_gb = (report.external_free_bytes or 0) / 1e9
+            return _("Espacio insuficiente en '{label}' ({free:.1f} GB libres, "
+                     "se necesitan {required:.1f} GB). Usando caché en "
+                     "'{wlabel}' ({wfree:.1f} GB libres en {wmount})").format(
+                         label=label, free=free_gb, required=needed_gb,
+                         wlabel=report.workspace_label, wfree=ext_free_gb,
+                         wmount=report.workspace_mount)
+        if report.status == "critical" and label:
+            return _("Espacio insuficiente para esta operación. Destino "
+                     "'{label}': {free:.1f} GB libres, se necesitan "
+                     "{required:.1f} GB.").format(
+                         label=label, free=free_gb, required=needed_gb)
+        return report.status_label
+
     def _on_workspace_change(self, btn: Gtk.Button) -> None:
         dialog = Gtk.FileChooserDialog(
             title=_("Elegir carpeta de trabajo"),
@@ -308,8 +337,8 @@ class AnalysisView(Gtk.Box):
         root = self.get_root()
         if isinstance(root, Gtk.Window):
             dialog.set_transient_for(root)
-        dialog.add_button("_Cancelar", Gtk.ResponseType.CANCEL)
-        dialog.add_button("_Elegir", Gtk.ResponseType.ACCEPT)
+        dialog.add_button("_" + _("Cancelar"), Gtk.ResponseType.CANCEL)
+        dialog.add_button("_" + _("Elegir"), Gtk.ResponseType.ACCEPT)
         dialog.set_default_response(Gtk.ResponseType.ACCEPT)
         dialog.connect("response", self._on_workspace_response)
         dialog.present()

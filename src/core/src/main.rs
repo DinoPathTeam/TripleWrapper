@@ -567,6 +567,7 @@ fn analysis_report_from_verdict(
                     .parent()
                     .map(|p| p.to_path_buf())
                     .unwrap_or_else(|| source_disk.mount_point.clone()),
+                "source_label": source_disk.label,
                 "status": "ok",
                 "status_label": message,
                 "blake3_expected": "",
@@ -589,6 +590,9 @@ fn analysis_report_from_verdict(
                 "free_bytes": source_disk.free_bytes,
                 "external_free_bytes": workspace_disk.free_bytes,
                 "suggested_workspace": workdir,
+                "source_label": source_disk.label,
+                "workspace_label": workspace_disk.label,
+                "workspace_mount": workspace_disk.mount_point.display().to_string(),
                 "status": "external",
                 "status_label": message,
                 "blake3_expected": "",
@@ -609,6 +613,7 @@ fn analysis_report_from_verdict(
                 "free_bytes": source_disk.free_bytes,
                 "external_free_bytes": (*best_available_gb * 1_073_741_824.0) as u64,
                 "suggested_workspace": "",
+                "source_label": source_disk.label,
                 "status": "critical",
                 "status_label": message,
                 "blake3_expected": "",

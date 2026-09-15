@@ -17,6 +17,10 @@ class AnalysisReport:
     suggested_workspace: str = ""
     status: str = "critical"              # "ok" | "external" | "critical"
     status_label: str = ""
+    # Structured atoms for localized messages (empty = old core: use label).
+    source_label: str = ""
+    workspace_label: str = ""
+    workspace_mount: str = ""
     blake3_expected: str = ""
     encrypted: bool = False
 

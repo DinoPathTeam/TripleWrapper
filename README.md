@@ -219,9 +219,9 @@ flatpak run --command=triplewrapper-gui io.github.dinopathtream.TripleWrapper
 - [x] **v1.0**: Stable API, Flathub publication
 - [ ] **v1.1**: Full i18n (gettext, English source + `es.po`, system locale; Spanish UI ships under Flathub's new-submission exception until then)
 
-> **Principio local-only**: sin backends cloud (fuera rclone), sin telemetría externa,
-> sin dependencias de red para operar. Los mounts de red (`/mnt`, NFS/SMB) se tratan
-> solo como rutas locales opcionales, nunca como servicios.
+> **Local-only principle**: no cloud backends (except rclone), no external telemetry,
+> no network dependencies for operation. Network mounts (`/mnt`, NFS/SMB) are treated
+> only as optional local paths, never as services.
 
 ## License
 

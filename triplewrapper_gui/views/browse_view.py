@@ -139,8 +139,8 @@ class BrowseView(Gtk.Box):
         root = self.get_root()
         if isinstance(root, Gtk.Window):
             dialog.set_transient_for(root)
-        dialog.add_button("_Cancelar", Gtk.ResponseType.CANCEL)
-        dialog.add_button("_Añadir", Gtk.ResponseType.ACCEPT)
+        dialog.add_button("_" + _("Cancelar"), Gtk.ResponseType.CANCEL)
+        dialog.add_button("_" + _("Añadir"), Gtk.ResponseType.ACCEPT)
         dialog.set_default_response(Gtk.ResponseType.ACCEPT)
         dialog.connect("response", self._on_add_response)
         dialog.present()

@@ -133,8 +133,8 @@ class WelcomeView(Gtk.Box):
         all_files.add_pattern("*")
         dialog.add_filter(all_files)
 
-        dialog.add_button("_Cancelar", Gtk.ResponseType.CANCEL)
-        dialog.add_button("_Abrir", Gtk.ResponseType.ACCEPT)
+        dialog.add_button("_" + _("Cancelar"), Gtk.ResponseType.CANCEL)
+        dialog.add_button("_" + _("Abrir"), Gtk.ResponseType.ACCEPT)
         dialog.set_default_response(Gtk.ResponseType.ACCEPT)
         dialog.connect("response", self._on_dialog_response)
         dialog.present()
