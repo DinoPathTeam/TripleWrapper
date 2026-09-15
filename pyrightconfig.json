@@ -1,9 +1,0 @@
-{
-  "executionEnvironments": [
-    {
-      "root": ".",
-      "extraPaths": ["."]
-    }
-  ],
-  "typeCheckingMode": "basic"
-}
