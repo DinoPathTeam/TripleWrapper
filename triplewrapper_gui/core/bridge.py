@@ -437,3 +437,16 @@ class CoreBridge(GObject.Object):
             if m:
                 return int(m.group(1))
             raise RuntimeError("No se pudo obtener el ID encolado")
+
+    def queue_action(self, operation: str, item_id: str | None = None) -> None:
+        """Run `queue <operation> [<ID>]` (sync, call in a thread)."""
+        binary = self._resolve_bin()
+        if not binary:
+            raise FileNotFoundError("triplewrapper-core no encontrado")
+        cmd = [binary, "queue", operation]
+        if item_id not in (None, "", "new", "queue"):
+            cmd.append(item_id)
+        proc = subprocess.run(cmd, capture_output=True, text=True, timeout=30, check=False)
+        if proc.returncode != 0:
+            raise RuntimeError(
+                (proc.stderr or proc.stdout or f"queue {operation} falló").strip())

@@ -26,6 +26,11 @@ pub fn detect_format(path: &Path) -> Result<ArchiveFormat> {
         return Ok(ArchiveFormat::Zip);
     }
 
+    // RAR4: "Rar!\x1a\x07\x00" — RAR5 appends \x01\x00.
+    if header.starts_with(b"Rar!\x1a\x07\x00") || header.starts_with(b"Rar!\x1a\x07\x01\x00") {
+        return Ok(ArchiveFormat::Rar);
+    }
+
     // GZIP: 1F 8B
     if header.starts_with(&[0x1F, 0x8B]) {
         return Ok(ArchiveFormat::TarGz);
@@ -98,6 +103,7 @@ pub fn optimal_compression_level(format: ArchiveFormat, level: u8) -> u8 {
         ArchiveFormat::TarZst => level.min(22), // zstd goes to 22
         ArchiveFormat::TarBz2 => level.min(9),
         ArchiveFormat::Tar => 0, // No compression
+        ArchiveFormat::Rar => 0, // Read-only, level meaningless
         ArchiveFormat::Pixz => level.min(9),
         // Plugins own their flags; pass the level through untouched.
         ArchiveFormat::External(_) => level,
@@ -120,7 +126,8 @@ pub fn compression_args(format: ArchiveFormat, level: u8, threads: usize) -> Vec
         ArchiveFormat::TarBz2 => vec!["-cjf".to_string()],
         ArchiveFormat::Tar => vec!["-cf".to_string()],
         ArchiveFormat::Pixz => vec!["-p".to_string(), threads.to_string()],
-        // Plugins own their CLI; core never builds args for them.
+        // RAR is read-only (rejected at create); Plugins own their CLI.
+        ArchiveFormat::Rar => vec![],
         ArchiveFormat::External(_) => vec![],
     }
 }
@@ -151,7 +158,9 @@ pub fn estimate_ratio_for_extension(ext: &str) -> f32 {
 /// Get recommended checksum algorithm for format
 pub fn recommended_checksum(format: ArchiveFormat) -> ChecksumAlgorithm {
     match format {
-        ArchiveFormat::SevenZ | ArchiveFormat::Zip => ChecksumAlgorithm::Blake3,
+        ArchiveFormat::SevenZ | ArchiveFormat::Zip | ArchiveFormat::Rar => {
+            ChecksumAlgorithm::Blake3
+        }
         ArchiveFormat::TarGz
         | ArchiveFormat::TarXz
         | ArchiveFormat::TarZst
@@ -200,6 +209,39 @@ mod tests {
         f.write_all(&[0; 100]).unwrap();
 
         assert_eq!(detect_format(&file).unwrap(), ArchiveFormat::TarGz);
+    }
+
+    #[test]
+    fn test_detect_rar4_rar5() {
+        for (name, magic) in [
+            ("test.rar", b"Rar!\x1a\x07\x00".as_slice()),
+            ("test5.rar", b"Rar!\x1a\x07\x01\x00".as_slice()),
+        ] {
+            let dir = tempdir().unwrap();
+            let file = dir.path().join(name);
+            let mut f = File::create(&file).unwrap();
+            f.write_all(magic).unwrap();
+            f.write_all(&[0; 100]).unwrap();
+
+            assert_eq!(detect_format(&file).unwrap(), ArchiveFormat::Rar);
+        }
+    }
+
+    #[test]
+    fn test_rar_extension_and_tool() {
+        use std::path::Path;
+        use std::path::PathBuf;
+
+        assert_eq!(
+            ArchiveFormat::from_extension(Path::new("a.rar")),
+            Some(ArchiveFormat::Rar)
+        );
+        assert_eq!(
+            super::resolve_format(&PathBuf::from("/tmp/x.rar")).unwrap(),
+            ArchiveFormat::Rar
+        );
+        assert_eq!(ArchiveFormat::Rar.default_extension(), "rar");
+        assert_eq!(ArchiveFormat::Rar.compression_tool(), "7z");
     }
 
     #[test]

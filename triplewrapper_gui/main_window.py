@@ -105,10 +105,12 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         self._analysis.connect("start-requested", self.on_start_requested)
         self._analysis.connect("enqueue-requested", self.on_enqueue_requested)
         self._analysis.connect("mount-requested", self.on_mount_requested)
+        self._analysis.connect("browse-requested", self.on_browse_requested)
         self._browse.connect("delete-requested", self.on_browse_delete)
         self._browse.connect("add-requested", self.on_browse_add)
         self._browse.connect("back-requested", lambda *_: self.go_analysis())
         self._analysis.connect("back-requested", lambda *_: self.go_welcome())
+        self._analysis.connect("queue-action", self.on_queue_action)
 
         self._progress.connect("done", self.on_done)
         self._progress.connect("cancel-requested", self.on_cancel)
@@ -348,6 +350,37 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
             GLib.idle_add(self.refresh_integrity_label)
         except Exception as exc:  # noqa: BLE001
             GLib.idle_add(self.show_toast, f"No se pudo añadir: {exc}", Adw.ToastPriority.HIGH)
+
+    def on_queue_action(self, view, action: str, item_id: str) -> None:
+        if action == "add":
+            self.go_welcome()
+            return
+        ops = {
+            "pause_queue": ("pause", None),
+            "resume_queue": ("resume", None),
+            "pause_item": ("pause-item", item_id),
+            "resume_item": ("resume-item", item_id),
+            "cancel_item": ("cancel", item_id),
+            "retry_item": ("retry", item_id),
+        }
+        if action not in ops:
+            return
+        import threading
+
+        threading.Thread(
+            target=self._do_queue_action, args=ops[action], daemon=True,
+        ).start()
+
+    def _do_queue_action(self, operation: str, item_id: str | None) -> None:
+        from gi.repository import GLib
+
+        try:
+            self._bridge.queue_action(operation, item_id)
+            GLib.idle_add(self.refresh_queue)
+        except Exception as exc:  # noqa: BLE001
+            GLib.idle_add(
+                self.show_toast, f"No se pudo {operation}: {exc}", Adw.ToastPriority.HIGH,
+            )
 
     def refresh_queue(self) -> None:
         import threading

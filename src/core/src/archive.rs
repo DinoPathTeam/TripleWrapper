@@ -184,7 +184,9 @@ impl ArchiveOperator {
             });
         }
         let (entries, encrypted, solid) = match format {
-            ArchiveFormat::SevenZ | ArchiveFormat::Zip => self.list_7z(archive, password).await?,
+            ArchiveFormat::SevenZ | ArchiveFormat::Zip | ArchiveFormat::Rar => {
+                self.list_7z(archive, password).await?
+            }
             ArchiveFormat::Tar
             | ArchiveFormat::TarGz
             | ArchiveFormat::TarXz
@@ -448,7 +450,7 @@ impl ArchiveOperator {
         };
 
         let mut cmd = match format {
-            ArchiveFormat::SevenZ | ArchiveFormat::Zip => {
+            ArchiveFormat::SevenZ | ArchiveFormat::Zip | ArchiveFormat::Rar => {
                 let mut cmd = Command::new(&self.sevenz_path);
                 cmd.args(["x", "-y"]);
                 if let Some(wd) = workdir {
@@ -759,6 +761,12 @@ impl ArchiveOperator {
                     "Pixz doesn't support incremental add".into(),
                 ));
             }
+            ArchiveFormat::Rar => {
+                // RAR is proprietary: 7z reads it but cannot write it.
+                return Err(TripleWrapperError::InvalidFormat(
+                    "RAR archives are read-only (proprietary format)".into(),
+                ));
+            }
             ArchiveFormat::External(id) => {
                 return Err(TripleWrapperError::InvalidFormat(format!(
                     "plugin triplewrapper-{id} does not support create/add yet"
@@ -878,7 +886,10 @@ impl ArchiveOperator {
         }
 
         let archive_str = archive.to_str().unwrap();
-        let mut cmd = if matches!(format, ArchiveFormat::SevenZ | ArchiveFormat::Zip) {
+        let mut cmd = if matches!(
+            format,
+            ArchiveFormat::SevenZ | ArchiveFormat::Zip | ArchiveFormat::Rar
+        ) {
             let mut cmd = Command::new(&self.sevenz_path);
             cmd.args(["t", archive_str]);
             push_password_arg(&mut cmd, password);

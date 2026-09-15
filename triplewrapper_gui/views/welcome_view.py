@@ -92,7 +92,7 @@ class WelcomeView(Gtk.Box):
 
         # Supported formats hint
         hint = Gtk.Label(
-            label="Formatos: 7z · ZIP · TAR · TAR.GZ · TAR.XZ · TAR.ZST · TAR.BZ2 · Pixz"
+            label="Formatos: 7z · ZIP · RAR (lectura) · TAR · TAR.GZ · TAR.XZ · TAR.ZST · TAR.BZ2 · Pixz"
         )
         hint.add_css_class("dim-label")
         hint.add_css_class("caption")
@@ -118,7 +118,7 @@ class WelcomeView(Gtk.Box):
         supported = Gtk.FileFilter()
         supported.set_name("Archivos soportados")
         for ext in (
-            "7z", "zip", "tar", "gz", "xz", "zst", "bz2",
+            "7z", "zip", "rar", "tar", "gz", "xz", "zst", "bz2",
             "tar.gz", "tgz", "tar.xz", "txz", "tar.zst", "tar.bz2", "tbz2",
             *self._extra_suffixes,
         ):

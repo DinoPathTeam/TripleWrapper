@@ -39,6 +39,8 @@ impl Default for OperationId {
 pub enum ArchiveFormat {
     SevenZ,
     Zip,
+    /// Read-only via 7z (RAR is proprietary: no create/delete support).
+    Rar,
     Tar,
     TarGz,
     TarXz,
@@ -54,6 +56,7 @@ impl ArchiveFormat {
         match ext.as_str() {
             "7z" => Some(Self::SevenZ),
             "zip" => Some(Self::Zip),
+            "rar" => Some(Self::Rar),
             "tar" => Some(Self::Tar),
             "gz" | "tgz" => Some(Self::TarGz),
             "xz" | "txz" => Some(Self::TarXz),
@@ -68,6 +71,7 @@ impl ArchiveFormat {
         match self {
             Self::SevenZ => "7z".into(),
             Self::Zip => "zip".into(),
+            Self::Rar => "rar".into(),
             Self::Tar => "tar".into(),
             Self::TarGz => "tar.gz".into(),
             Self::TarXz => "tar.xz".into(),
@@ -82,6 +86,7 @@ impl ArchiveFormat {
         match self {
             Self::SevenZ => "7z".into(),
             Self::Zip => "7z".into(),
+            Self::Rar => "7z".into(),
             Self::Tar => "tar".into(),
             Self::TarGz => "tar".into(),
             Self::TarXz => "tar".into(),

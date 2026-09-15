@@ -12,7 +12,7 @@ import shutil
 from pathlib import Path
 
 ALLOWED_SUFFIXES = (
-    ".7z", ".zip", ".tar", ".gz", ".xz", ".zst", ".bz2",
+    ".7z", ".zip", ".rar", ".tar", ".gz", ".xz", ".zst", ".bz2",
     ".tar.gz", ".tgz", ".tar.xz", ".txz", ".tar.zst", ".tar.bz2", ".tbz2",
 )
 

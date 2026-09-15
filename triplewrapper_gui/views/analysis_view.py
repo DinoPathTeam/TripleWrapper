@@ -6,7 +6,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Gdk, GObject, Gtk
+from gi.repository import Adw, Gdk, GObject, Gtk
 
 from ..core.models import AnalysisReport, human_size
 from ..widgets.queue_panel import QueueItem, QueuePanelWidget
@@ -23,6 +23,7 @@ class AnalysisView(Gtk.Box):
         "browse-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "back-requested": (GObject.SignalFlags.RUN_FIRST, None, ()),
         "mount-requested": (GObject.SignalFlags.RUN_FIRST, None, (str,)),
+        "queue-action": (GObject.SignalFlags.RUN_FIRST, None, (str, str)),
     }
 
     def __init__(self) -> None:
@@ -122,11 +123,19 @@ class AnalysisView(Gtk.Box):
         self._ws_title.set_halign(Gtk.Align.START)
         ws_box.append(self._ws_title)
 
+        ws_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self._ws_label = Gtk.Label(label="—")
         self._ws_label.set_halign(Gtk.Align.START)
+        self._ws_label.set_hexpand(True)
         self._ws_label.set_wrap(True)
         self._ws_label.set_selectable(True)
-        ws_box.append(self._ws_label)
+        ws_row.append(self._ws_label)
+        ws_change_btn = Gtk.Button(label="Cambiar…")
+        ws_change_btn.add_css_class("pill")
+        ws_change_btn.set_tooltip_text("Elegir otra carpeta de trabajo")
+        ws_change_btn.connect("clicked", self._on_workspace_change)
+        ws_row.append(ws_change_btn)
+        ws_box.append(ws_row)
 
         self._ws_status = Gtk.Label()
         self._ws_status.set_halign(Gtk.Align.START)
@@ -214,6 +223,8 @@ class AnalysisView(Gtk.Box):
 
         self._queue_panel = QueuePanelWidget()
         self._queue_panel.set_size_request(0, 220)
+        self._queue_panel.connect(
+            "item-action", lambda _p, a, i: self.emit("queue-action", a, i))
         queue_box.append(self._queue_panel)
 
         content.append(queue_card)
@@ -285,6 +296,50 @@ class AnalysisView(Gtk.Box):
 
     def get_selected_workspace(self) -> str | None:
         return self._selected_workspace
+
+    def _on_workspace_change(self, btn: Gtk.Button) -> None:
+        dialog = Gtk.FileChooserDialog(
+            title="Elegir carpeta de trabajo",
+            action=Gtk.FileChooserAction.SELECT_FOLDER,
+        )
+        root = self.get_root()
+        if isinstance(root, Gtk.Window):
+            dialog.set_transient_for(root)
+        dialog.add_button("_Cancelar", Gtk.ResponseType.CANCEL)
+        dialog.add_button("_Elegir", Gtk.ResponseType.ACCEPT)
+        dialog.set_default_response(Gtk.ResponseType.ACCEPT)
+        dialog.connect("response", self._on_workspace_response)
+        dialog.present()
+
+    def _on_workspace_response(self, dialog: Gtk.FileChooserDialog, response: int) -> None:
+        import os
+
+        try:
+            if response != Gtk.ResponseType.ACCEPT:
+                return
+            folder = dialog.get_file()
+            path = folder.get_path() if folder is not None else None
+            if not path:
+                return
+            try:
+                os.makedirs(path, exist_ok=True)
+            except OSError:
+                pass
+            if not os.path.isdir(path) or not os.access(path, os.W_OK | os.X_OK):
+                self._workspace_error(f"Sin permiso de escritura en {path}")
+                return
+            self._selected_workspace = path
+            self._ws_label.set_label(path)
+        finally:
+            dialog.destroy()
+
+    def _workspace_error(self, text: str) -> None:
+        parent = self.get_root()
+        if isinstance(parent, Gtk.Window):
+            dlg = Adw.MessageDialog(
+                transient_for=parent, heading="Carpeta no válida", body=text)
+            dlg.add_response("ok", "Entendido")
+            dlg.present()
 
     def set_integrity_text(self, text: str) -> None:
         self._integrity_label.set_label(f"Integridad local: {text}")

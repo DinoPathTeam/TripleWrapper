@@ -17,7 +17,7 @@
       <li><em>Safe operations:</em> In-place safe principle - original file never modified until new version
       is verified with checksums</li>
       <li><em>Native GTK4/Libadwaita:</em> Integrates perfectly with GNOME and other GTK desktops</li>
-      <li><em>Multiple formats:</em> Supports 7z, ZIP, TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2, Pixz</li>
+      <li><em>Multiple formats:</em> Supports 7z, ZIP, RAR (read-only), TAR, TAR.GZ, TAR.XZ, TAR.ZST, TAR.BZ2, Pixz</li>
       <li><em>Flatpak sandboxed:</em> Secure by default with explicit filesystem permissions</li>
     </ul>
 
