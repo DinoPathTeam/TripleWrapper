@@ -11,6 +11,7 @@ from gi.repository import Adw, Gio, Gtk
 from .core.bridge import CoreBridge
 from .views.analysis_view import AnalysisView
 from .views.browse_view import BrowseView
+from .views.help_view import HelpView
 from .views.progress_view import ProgressView
 from .views.welcome_view import WelcomeView
 
@@ -28,6 +29,7 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
 
         self._bridge = CoreBridge()
         self._browse_pw: str | None = None
+        self._help_window: Adw.Window | None = None
         self.build_ui()
         self.bind_signals()
 
@@ -48,6 +50,9 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         style_section.append("Oscuro", "app.style-dark")
         style_section.append("Sistema", "app.style-default")
         style_menu.append_section("Apariencia", style_section)
+        help_section = Gio.Menu()
+        help_section.append("Ayuda y documentación", "app.show-help")
+        style_menu.append_section(None, help_section)
 
         menu_btn = Gtk.MenuButton(menu_model=style_menu)
         menu_btn.set_icon_name("open-menu-symbolic")
@@ -154,6 +159,31 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
 
     def go_progress(self) -> None:
         self._stack.set_visible_child_name("progress")
+
+    def show_help(self) -> None:
+        if self._help_window is None:
+            win = Adw.Window(
+                transient_for=self,
+                modal=False,
+                title="Ayuda y documentación",
+                default_width=700,
+                default_height=600,
+            )
+            toolbar = Adw.ToolbarView()
+            header = Adw.HeaderBar()
+            header.set_show_end_title_buttons(True)
+            header.set_title_widget(
+                Adw.WindowTitle(title="Ayuda y documentación"))
+            toolbar.add_top_bar(header)
+            toolbar.set_content(HelpView())
+            win.set_content(toolbar)
+            win.connect("close-request", self._on_help_close)
+            self._help_window = win
+        self._help_window.present()
+
+    def _on_help_close(self, win: Adw.Window) -> bool:
+        win.set_visible(False)
+        return True
 
     # -------------------------------------------------------------- Handlers
     def on_file_selected(self, view, path: str) -> None:

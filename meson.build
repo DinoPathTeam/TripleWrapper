@@ -42,6 +42,7 @@ py.install_sources(
    'triplewrapper_gui/views/welcome_view.py',
    'triplewrapper_gui/views/analysis_view.py',
    'triplewrapper_gui/views/browse_view.py',
+   'triplewrapper_gui/views/help_view.py',
    'triplewrapper_gui/views/progress_view.py',
    'triplewrapper_gui/widgets/__init__.py',
    'triplewrapper_gui/widgets/steam_graph.py',

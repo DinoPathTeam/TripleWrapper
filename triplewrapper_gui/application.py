@@ -60,6 +60,13 @@ class TripleWrapperApplication(Adw.Application):
             )
             self.add_action(action)
 
+        # Help action
+        help_action = Gio.SimpleAction.new("show-help", None)
+        help_action.connect(
+            "activate", lambda *_: self._window.show_help() if self._window else None,
+        )
+        self.add_action(help_action)
+
         # Quit action
         quit_action = Gio.SimpleAction.new("quit", None)
         quit_action.connect("activate", lambda *_: self.quit())
