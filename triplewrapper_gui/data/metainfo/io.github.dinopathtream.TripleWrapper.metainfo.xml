@@ -44,6 +44,12 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.4" date="2026-09-15">
+      <description><p>Standalone help window with documentation</p></description>
+    </release>
+    <release version="1.0.3" date="2026-09-15">
+      <description><p>Archive browser, queue actions, workspace picker, RAR read-only support</p></description>
+    </release>
     <release version="1.0.2" date="2026-09-15">
       <description><p>Self-consistent release builds and documentation</p></description>
     </release>
