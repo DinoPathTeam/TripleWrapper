@@ -16,6 +16,8 @@
 ![Python](https://img.shields.io/badge/python-3.11+-blue)
 ![GTK4](https://img.shields.io/badge/GTK-4.10+-green)
 
+> **Status:** v1.0 stable, not released · v1.1 (full i18n) in progress.
+
 ## Overview
 
 TripleWrapper is a modern archive manager for Linux that solves the classic problem: **"Not enough space to extract/modify this archive"**.
