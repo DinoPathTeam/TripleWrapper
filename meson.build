@@ -17,13 +17,13 @@ gtk4_dep = dependency('gtk4', version: '>=4.10')
 libadwaita_dep = dependency('libadwaita-1', version: '>=1.4')
 
 # Data files (standard locations required by AppStream/desktop lint)
-icon_dir = join_paths(get_option('datadir'), 'icons/hicolor/scalable/apps')
+icon_dir = join_paths(get_option('datadir'), 'icons/hicolor/512x512/apps')
 desktop_dir = join_paths(get_option('datadir'), 'applications')
 metainfo_dir = join_paths(get_option('datadir'), 'metainfo')
 schemas_dir = join_paths(get_option('datadir'), 'glib-2.0/schemas')
 
 # Install data files
-install_data('triplewrapper_gui/data/icons/triplewrapper.svg', install_dir: icon_dir, rename: 'io.github.dinopathtream.TripleWrapper.svg')
+install_data('triplewrapper_gui/data/icons/triplewrapper.png', install_dir: icon_dir, rename: 'io.github.dinopathtream.TripleWrapper.png')
 install_data('triplewrapper_gui/data/applications/io.github.dinopathtream.TripleWrapper.desktop', install_dir: desktop_dir)
 install_data('triplewrapper_gui/data/metainfo/io.github.dinopathtream.TripleWrapper.metainfo.xml', install_dir: metainfo_dir)
 install_data('triplewrapper_gui/data/glib-2.0/schemas/io.github.dinopathtream.TripleWrapper.gschema.xml', install_dir: schemas_dir)
