@@ -40,3 +40,107 @@ msgstr "All files"
 
 msgid "Formatos: 7z · ZIP · RAR (lectura) · TAR · TAR.GZ · TAR.XZ · TAR.ZST · TAR.BZ2 · Pixz"
 msgstr "Formats: 7z · ZIP · RAR (read-only) · TAR · TAR.GZ · TAR.XZ · TAR.ZST · TAR.BZ2 · Pixz"
+
+# --- views/analysis_view.py ---
+
+msgid "Análisis de espacio"
+msgstr "Space analysis"
+
+msgid "Revisa los requerimientos antes de iniciar"
+msgstr "Review the requirements before starting"
+
+msgid "Uso de almacenamiento"
+msgstr "Storage usage"
+
+msgid "Requerimientos"
+msgstr "Requirements"
+
+msgid "Workspace sugerido"
+msgstr "Suggested workspace"
+
+msgid "Cambiar…"
+msgstr "Change…"
+
+msgid "Elegir otra carpeta de trabajo"
+msgstr "Choose another work folder"
+
+msgid "Integridad local: sin datos"
+msgstr "Local integrity: no data"
+
+msgid "Dispositivos sin montar"
+msgstr "Unmounted devices"
+
+msgid "¿Conectaste un USB y no aparece arriba? Móntalo aquí."
+msgstr "Connected a USB drive that doesn't show above? Mount it here."
+
+msgid "Atrás"
+msgstr "Back"
+
+msgid "Iniciar"
+msgstr "Start"
+
+msgid "Encolar"
+msgstr "Enqueue"
+
+msgid "Explorar contenido"
+msgstr "Browse contents"
+
+msgid "Cola de operaciones"
+msgstr "Operation queue"
+
+msgid "Usado"
+msgstr "Used"
+
+msgid "Archivo"
+msgstr "File"
+
+msgid "Libre"
+msgstr "Free"
+
+msgid "Necesario"
+msgstr "Required"
+
+msgid "Tamaño del archivo"
+msgstr "File size"
+
+msgid "Espacio necesario (in-place)"
+msgstr "Required space (in-place)"
+
+msgid "Espacio libre en origen"
+msgstr "Free space on source"
+
+msgid "Estado"
+msgstr "Status"
+
+msgid "🔒 Archivo cifrado (AES) — pedirá contraseña al iniciar"
+msgstr "🔒 Encrypted file (AES) — will ask for password on start"
+
+msgid "Sin cifrado detectado"
+msgstr "No encryption detected"
+
+msgid "Integridad local: consultando…"
+msgstr "Local integrity: checking…"
+
+msgid "Elegir carpeta de trabajo"
+msgstr "Choose work folder"
+
+msgid "Sin permiso de escritura en {path}"
+msgstr "No write permission on {path}"
+
+msgid "Carpeta no válida"
+msgstr "Invalid folder"
+
+msgid "Entendido"
+msgstr "Understood"
+
+msgid "Integridad local: {text}"
+msgstr "Local integrity: {text}"
+
+msgid "Nada por montar — todo lo conectado ya está disponible."
+msgstr "Nothing to mount — everything connected is already available."
+
+msgid "extraíble"
+msgstr "removable"
+
+msgid "Montar"
+msgstr "Mount"

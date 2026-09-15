@@ -9,6 +9,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gdk, GObject, Gtk
 
 from ..core.models import AnalysisReport, human_size
+from ..i18n import _
 from ..widgets.queue_panel import QueueItem, QueuePanelWidget
 from ..widgets.storage_donut import StorageDonut
 
@@ -47,11 +48,11 @@ class AnalysisView(Gtk.Box):
         header = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         header.set_halign(Gtk.Align.CENTER)
 
-        title = Gtk.Label(label="Análisis de espacio")
+        title = Gtk.Label(label=_("Análisis de espacio"))
         title.add_css_class("title-2")
         header.append(title)
 
-        subtitle = Gtk.Label(label="Revisa los requerimientos antes de iniciar")
+        subtitle = Gtk.Label(label=_("Revisa los requerimientos antes de iniciar"))
         subtitle.add_css_class("dim-label")
         header.append(subtitle)
         content.append(header)
@@ -70,7 +71,7 @@ class AnalysisView(Gtk.Box):
         donut_box.set_margin_end(18)
         donut_card.set_child(donut_box)
 
-        donut_title = Gtk.Label(label="Uso de almacenamiento")
+        donut_title = Gtk.Label(label=_("Uso de almacenamiento"))
         donut_title.add_css_class("heading")
         donut_title.set_halign(Gtk.Align.START)
         donut_box.append(donut_title)
@@ -96,7 +97,7 @@ class AnalysisView(Gtk.Box):
         info_box.set_margin_end(18)
         info_card.set_child(info_box)
 
-        info_title = Gtk.Label(label="Requerimientos")
+        info_title = Gtk.Label(label=_("Requerimientos"))
         info_title.add_css_class("heading")
         info_title.set_halign(Gtk.Align.START)
         info_box.append(info_title)
@@ -118,7 +119,7 @@ class AnalysisView(Gtk.Box):
         ws_box.set_margin_end(16)
         self._workspace_card.set_child(ws_box)
 
-        self._ws_title = Gtk.Label(label="Workspace sugerido")
+        self._ws_title = Gtk.Label(label=_("Workspace sugerido"))
         self._ws_title.add_css_class("heading")
         self._ws_title.set_halign(Gtk.Align.START)
         ws_box.append(self._ws_title)
@@ -130,9 +131,9 @@ class AnalysisView(Gtk.Box):
         self._ws_label.set_wrap(True)
         self._ws_label.set_selectable(True)
         ws_row.append(self._ws_label)
-        ws_change_btn = Gtk.Button(label="Cambiar…")
+        ws_change_btn = Gtk.Button(label=_("Cambiar…"))
         ws_change_btn.add_css_class("pill")
-        ws_change_btn.set_tooltip_text("Elegir otra carpeta de trabajo")
+        ws_change_btn.set_tooltip_text(_("Elegir otra carpeta de trabajo"))
         ws_change_btn.connect("clicked", self._on_workspace_change)
         ws_row.append(ws_change_btn)
         ws_box.append(ws_row)
@@ -146,7 +147,7 @@ class AnalysisView(Gtk.Box):
         self._crypto_label.add_css_class("dim-label")
         ws_box.append(self._crypto_label)
 
-        self._integrity_label = Gtk.Label(label="Integridad local: sin datos")
+        self._integrity_label = Gtk.Label(label=_("Integridad local: sin datos"))
         self._integrity_label.set_halign(Gtk.Align.START)
         self._integrity_label.add_css_class("dim-label")
         self._integrity_label.set_wrap(True)
@@ -164,12 +165,13 @@ class AnalysisView(Gtk.Box):
         dev_box.set_margin_end(16)
         devices_card.set_child(dev_box)
 
-        dev_title = Gtk.Label(label="Dispositivos sin montar")
+        dev_title = Gtk.Label(label=_("Dispositivos sin montar"))
         dev_title.add_css_class("heading")
         dev_title.set_halign(Gtk.Align.START)
         dev_box.append(dev_title)
 
-        dev_hint = Gtk.Label(label="¿Conectaste un USB y no aparece arriba? Móntalo aquí.")
+        dev_hint = Gtk.Label(
+            label=_("¿Conectaste un USB y no aparece arriba? Móntalo aquí."))
         dev_hint.add_css_class("dim-label")
         dev_hint.set_halign(Gtk.Align.START)
         dev_hint.set_wrap(True)
@@ -184,22 +186,22 @@ class AnalysisView(Gtk.Box):
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         actions.set_halign(Gtk.Align.CENTER)
 
-        back_btn = Gtk.Button(label="Atrás")
+        back_btn = Gtk.Button(label=_("Atrás"))
         back_btn.connect("clicked", lambda *_: self.emit("back-requested"))
         actions.append(back_btn)
 
-        self._start_btn = Gtk.Button(label="Iniciar")
+        self._start_btn = Gtk.Button(label=_("Iniciar"))
         self._start_btn.add_css_class("suggested-action")
         self._start_btn.add_css_class("pill")
         self._start_btn.connect("clicked", lambda *_: self.emit("start-requested"))
         actions.append(self._start_btn)
 
-        enqueue_btn = Gtk.Button(label="Encolar")
+        enqueue_btn = Gtk.Button(label=_("Encolar"))
         enqueue_btn.add_css_class("pill")
         enqueue_btn.connect("clicked", lambda *_: self.emit("enqueue-requested"))
         actions.append(enqueue_btn)
 
-        browse_btn = Gtk.Button(label="Explorar contenido")
+        browse_btn = Gtk.Button(label=_("Explorar contenido"))
         browse_btn.add_css_class("pill")
         browse_btn.connect("clicked", lambda *_: self.emit("browse-requested"))
         actions.append(browse_btn)
@@ -216,7 +218,7 @@ class AnalysisView(Gtk.Box):
         queue_box.set_margin_end(16)
         queue_card.set_child(queue_box)
 
-        queue_title = Gtk.Label(label="Cola de operaciones")
+        queue_title = Gtk.Label(label=_("Cola de operaciones"))
         queue_title.add_css_class("heading")
         queue_title.set_halign(Gtk.Align.START)
         queue_box.append(queue_title)
@@ -237,10 +239,10 @@ class AnalysisView(Gtk.Box):
         # Donut segments
         self._donut.set_segments(
             [
-                ("Usado", report.used_bytes, "#3584e4"),
-                ("Archivo", report.archive_bytes, "#ff7800"),
-                ("Libre", report.free_bytes, "#2ec27e"),
-                ("Necesario", report.needed_bytes, "#c061cb"),
+                (_("Usado"), report.used_bytes, "#3584e4"),
+                (_("Archivo"), report.archive_bytes, "#ff7800"),
+                (_("Libre"), report.free_bytes, "#2ec27e"),
+                (_("Necesario"), report.needed_bytes, "#c061cb"),
             ]
         )
 
@@ -260,10 +262,10 @@ class AnalysisView(Gtk.Box):
         for child in list(self._info_rows):
             self._info_rows.remove(child)
         for label, value in [
-            ("Tamaño del archivo", report.human_archive),
-            ("Espacio necesario (in-place)", report.human_needed),
-            ("Espacio libre en origen", report.human_free_source),
-            ("Estado", report.status_label),
+            (_("Tamaño del archivo"), report.human_archive),
+            (_("Espacio necesario (in-place)"), report.human_needed),
+            (_("Espacio libre en origen"), report.human_free_source),
+            (_("Estado"), report.status_label),
         ]:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             row.append(Gtk.Label(label=label, xalign=0))
@@ -278,10 +280,11 @@ class AnalysisView(Gtk.Box):
         # Workspace card
         self._ws_label.set_label(report.suggested_workspace)
         if report.encrypted:
-            self._crypto_label.set_label("🔒 Archivo cifrado (AES) — pedirá contraseña al iniciar")
+            self._crypto_label.set_label(
+                _("🔒 Archivo cifrado (AES) — pedirá contraseña al iniciar"))
         else:
-            self._crypto_label.set_label("Sin cifrado detectado")
-        self._integrity_label.set_label("Integridad local: consultando…")
+            self._crypto_label.set_label(_("Sin cifrado detectado"))
+        self._integrity_label.set_label(_("Integridad local: consultando…"))
         self._ws_status.set_label(report.status_label)
         self._ws_status.remove_css_class("success")
         self._ws_status.remove_css_class("warning")
@@ -299,7 +302,7 @@ class AnalysisView(Gtk.Box):
 
     def _on_workspace_change(self, btn: Gtk.Button) -> None:
         dialog = Gtk.FileChooserDialog(
-            title="Elegir carpeta de trabajo",
+            title=_("Elegir carpeta de trabajo"),
             action=Gtk.FileChooserAction.SELECT_FOLDER,
         )
         root = self.get_root()
@@ -326,7 +329,8 @@ class AnalysisView(Gtk.Box):
             except OSError:
                 pass
             if not os.path.isdir(path) or not os.access(path, os.W_OK | os.X_OK):
-                self._workspace_error(f"Sin permiso de escritura en {path}")
+                self._workspace_error(
+                    _("Sin permiso de escritura en {path}").format(path=path))
                 return
             self._selected_workspace = path
             self._ws_label.set_label(path)
@@ -337,19 +341,21 @@ class AnalysisView(Gtk.Box):
         parent = self.get_root()
         if isinstance(parent, Gtk.Window):
             dlg = Adw.MessageDialog(
-                transient_for=parent, heading="Carpeta no válida", body=text)
-            dlg.add_response("ok", "Entendido")
+                transient_for=parent, heading=_("Carpeta no válida"), body=text)
+            dlg.add_response("ok", _("Entendido"))
             dlg.present()
 
     def set_integrity_text(self, text: str) -> None:
-        self._integrity_label.set_label(f"Integridad local: {text}")
+        self._integrity_label.set_label(
+            _("Integridad local: {text}").format(text=text))
 
     def set_devices(self, devices: list[dict]) -> None:
         """Show unmounted devices, each with its Montar button."""
         for child in list(self._devices_box):
             self._devices_box.remove(child)
         if not devices:
-            empty = Gtk.Label(label="Nada por montar — todo lo conectado ya está disponible.")
+            empty = Gtk.Label(
+                label=_("Nada por montar — todo lo conectado ya está disponible."))
             empty.add_css_class("dim-label")
             empty.set_halign(Gtk.Align.START)
             self._devices_box.append(empty)
@@ -358,12 +364,12 @@ class AnalysisView(Gtk.Box):
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
             info = f"{dev.get('dev_path', '?')} · {dev.get('fstype', '?')} · {human_size(dev.get('size_bytes', 0))}"
             if dev.get("removable"):
-                info += " · extraíble"
+                info += " · " + _("extraíble")
             label = Gtk.Label(label=info)
             label.set_halign(Gtk.Align.START)
             label.set_hexpand(True)
             row.append(label)
-            mount_btn = Gtk.Button(label="Montar")
+            mount_btn = Gtk.Button(label=_("Montar"))
             mount_btn.add_css_class("pill")
             dev_path = dev.get("dev_path", "")
             mount_btn.connect(
