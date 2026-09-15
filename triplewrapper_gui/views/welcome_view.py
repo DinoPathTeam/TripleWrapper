@@ -6,7 +6,7 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Gdk, Gio, GLib, GObject, Gtk
+from gi.repository import Gdk, Gio, GObject, Gtk
 
 
 class WelcomeView(Gtk.Box):
@@ -102,11 +102,18 @@ class WelcomeView(Gtk.Box):
 
     # -------------------------------------------------------------- Callbacks
     def _on_open_clicked(self, btn: Gtk.Button) -> None:
-        dialog = Gtk.FileDialog.new()
-        dialog.set_title("Seleccionar archivo")
-
-        # Build filter list
-        filters = Gio.ListStore.new(Gtk.FileFilter)
+        # NOTE: Gtk.FileDialog.open() / FileChooserNative never present
+        # their dialog on some stacks (observed: KDE/Wayland, GTK 4.22 —
+        # dialog object created, never mapped, no error). The classic
+        # dialog presented explicitly works everywhere; revisit when the
+        # wrappers prove reliable.
+        dialog = Gtk.FileChooserDialog(
+            title="Seleccionar archivo",
+            action=Gtk.FileChooserAction.OPEN,
+        )
+        root = self.get_root()
+        if isinstance(root, Gtk.Window):
+            dialog.set_transient_for(root)
 
         supported = Gtk.FileFilter()
         supported.set_name("Archivos soportados")
@@ -116,14 +123,18 @@ class WelcomeView(Gtk.Box):
             *self._extra_suffixes,
         ):
             supported.add_suffix(ext)
-        filters.append(supported)
+        dialog.add_filter(supported)
 
         all_files = Gtk.FileFilter()
         all_files.set_name("Todos los archivos")
-        filters.append(all_files)
+        all_files.add_pattern("*")
+        dialog.add_filter(all_files)
 
-        dialog.set_filters(filters)
-        dialog.open(self.get_root(), None, self._on_dialog_done)
+        dialog.add_button("_Cancelar", Gtk.ResponseType.CANCEL)
+        dialog.add_button("_Abrir", Gtk.ResponseType.ACCEPT)
+        dialog.set_default_response(Gtk.ResponseType.ACCEPT)
+        dialog.connect("response", self._on_dialog_response)
+        dialog.present()
 
     def _on_drop(self, _target, value, _x, _y) -> bool:
         path = value.get_path() if value is not None else None
@@ -138,17 +149,15 @@ class WelcomeView(Gtk.Box):
         self._analyze_btn.set_sensitive(True)
         self.emit("file-selected", path)
 
-    def _on_dialog_done(self, dialog, result) -> None:
+    def _on_dialog_response(self, dialog: Gtk.FileChooserDialog, response: int) -> None:
         try:
-            file = dialog.open_finish(result)
-        except GLib.Error:
-            return  # user cancelled
-        if file is None:
-            return
-        path = file.get_path()
-        if path is None:
-            return
-        self._select_path(path)
+            if response == Gtk.ResponseType.ACCEPT:
+                file = dialog.get_file()
+                path = file.get_path() if file is not None else None
+                if path is not None:
+                    self._select_path(path)
+        finally:
+            dialog.destroy()
 
     # ----------------------------------------------------------------- API
     def set_busy(self, busy: bool) -> None:
