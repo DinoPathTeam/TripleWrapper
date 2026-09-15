@@ -1,0 +1,42 @@
+# English translation of TripleWrapper (Spanish source strings).
+# Review focus: grammar and technical accuracy of the English side.
+msgid ""
+msgstr ""
+"Project-Id-Version: triplewrapper 1.0\n"
+"PO-Revision-Date: 2026-09-15\n"
+"Last-Translator: DinoPathTeam\n"
+"Language-Team: TripleWrapper\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Language: en\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
+
+# --- views/welcome_view.py ---
+
+msgid "Gestor de archivos con reescritura segura en el mismo espacio"
+msgstr "File manager with safe in-place rewriting"
+
+msgid "Ningún archivo seleccionado"
+msgstr "No file selected"
+
+msgid "Abrir archivo"
+msgstr "Open file"
+
+msgid "Analizar"
+msgstr "Analyze"
+
+msgid "Analizando…"
+msgstr "Analyzing…"
+
+msgid "Seleccionar archivo"
+msgstr "Select file"
+
+msgid "Archivos soportados"
+msgstr "Supported files"
+
+msgid "Todos los archivos"
+msgstr "All files"
+
+msgid "Formatos: 7z · ZIP · RAR (lectura) · TAR · TAR.GZ · TAR.XZ · TAR.ZST · TAR.BZ2 · Pixz"
+msgstr "Formats: 7z · ZIP · RAR (read-only) · TAR · TAR.GZ · TAR.XZ · TAR.ZST · TAR.BZ2 · Pixz"

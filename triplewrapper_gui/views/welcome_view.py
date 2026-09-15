@@ -8,6 +8,8 @@ gi.require_version("Adw", "1")
 
 from gi.repository import Gdk, Gio, GObject, Gtk
 
+from ..i18n import _
+
 
 class WelcomeView(Gtk.Box):
     """Landing view: pick an archive and analyze."""
@@ -39,7 +41,8 @@ class WelcomeView(Gtk.Box):
         title.add_css_class("title-1")
         title_box.append(title)
 
-        subtitle = Gtk.Label(label="Gestor de archivos con reescritura segura en el mismo espacio")
+        subtitle = Gtk.Label(
+            label=_("Gestor de archivos con reescritura segura en el mismo espacio"))
         subtitle.add_css_class("dim-label")
         subtitle.set_wrap(True)
         subtitle.set_justify(Gtk.Justification.CENTER)
@@ -61,7 +64,7 @@ class WelcomeView(Gtk.Box):
         icon.add_css_class("dim-label")
         inner.append(icon)
 
-        self._path_label = Gtk.Label(label="Ningún archivo seleccionado")
+        self._path_label = Gtk.Label(label=_("Ningún archivo seleccionado"))
         self._path_label.add_css_class("heading")
         self._path_label.set_wrap(True)
         self._path_label.set_ellipsize(3)  # PANGO_ELLIPSIZE_END
@@ -70,13 +73,13 @@ class WelcomeView(Gtk.Box):
         btn_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         btn_row.set_halign(Gtk.Align.CENTER)
 
-        open_btn = Gtk.Button(label="Abrir archivo")
+        open_btn = Gtk.Button(label=_("Abrir archivo"))
         open_btn.add_css_class("suggested-action")
         open_btn.add_css_class("pill")
         open_btn.connect("clicked", self._on_open_clicked)
         btn_row.append(open_btn)
 
-        self._analyze_btn = Gtk.Button(label="Analizar")
+        self._analyze_btn = Gtk.Button(label=_("Analizar"))
         self._analyze_btn.add_css_class("pill")
         self._analyze_btn.set_sensitive(False)
         self._analyze_btn.connect("clicked", lambda *_: self.emit("analyze-requested"))
@@ -92,7 +95,7 @@ class WelcomeView(Gtk.Box):
 
         # Supported formats hint
         hint = Gtk.Label(
-            label="Formatos: 7z · ZIP · RAR (lectura) · TAR · TAR.GZ · TAR.XZ · TAR.ZST · TAR.BZ2 · Pixz"
+            label=_("Formatos: 7z · ZIP · RAR (lectura) · TAR · TAR.GZ · TAR.XZ · TAR.ZST · TAR.BZ2 · Pixz")
         )
         hint.add_css_class("dim-label")
         hint.add_css_class("caption")
@@ -108,7 +111,7 @@ class WelcomeView(Gtk.Box):
         # dialog presented explicitly works everywhere; revisit when the
         # wrappers prove reliable.
         dialog = Gtk.FileChooserDialog(
-            title="Seleccionar archivo",
+            title=_("Seleccionar archivo"),
             action=Gtk.FileChooserAction.OPEN,
         )
         root = self.get_root()
@@ -116,7 +119,7 @@ class WelcomeView(Gtk.Box):
             dialog.set_transient_for(root)
 
         supported = Gtk.FileFilter()
-        supported.set_name("Archivos soportados")
+        supported.set_name(_("Archivos soportados"))
         for ext in (
             "7z", "zip", "rar", "tar", "gz", "xz", "zst", "bz2",
             "tar.gz", "tgz", "tar.xz", "txz", "tar.zst", "tar.bz2", "tbz2",
@@ -126,7 +129,7 @@ class WelcomeView(Gtk.Box):
         dialog.add_filter(supported)
 
         all_files = Gtk.FileFilter()
-        all_files.set_name("Todos los archivos")
+        all_files.set_name(_("Todos los archivos"))
         all_files.add_pattern("*")
         dialog.add_filter(all_files)
 
@@ -163,6 +166,6 @@ class WelcomeView(Gtk.Box):
     def set_busy(self, busy: bool) -> None:
         self._analyze_btn.set_sensitive(not busy)
         if busy:
-            self._analyze_btn.set_label("Analizando…")
+            self._analyze_btn.set_label(_("Analizando…"))
         else:
-            self._analyze_btn.set_label("Analizar")
+            self._analyze_btn.set_label(_("Analizar"))

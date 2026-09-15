@@ -48,12 +48,24 @@ py.install_sources(
    'triplewrapper_gui/widgets/steam_graph.py',
    'triplewrapper_gui/widgets/storage_donut.py',
    'triplewrapper_gui/widgets/queue_panel.py',
+   'triplewrapper_gui/i18n.py',
    'triplewrapper_gui/core/__init__.py',
    'triplewrapper_gui/core/bridge.py',
    'triplewrapper_gui/core/models.py',
    'triplewrapper_gui/core/protocol.py'],
   preserve_path: true
 )
+
+# Translations (built from po/*.po; missing catalogs fall back to Spanish)
+foreach lang : ['en']
+  custom_target('locale-' + lang,
+    input: 'po' / lang + '.po',
+    output: 'triplewrapper.mo',
+    command: [find_program('msgfmt'), '--check', '@INPUT@', '-o', '@OUTPUT@'],
+    install: true,
+    install_dir: py.get_install_dir() / 'triplewrapper_gui' / 'locale' / lang / 'LC_MESSAGES',
+  )
+endforeach
 
 # Executable script (install_data preserves the +x bit tracked in git)
 install_data('triplewrapper-gui', install_dir: get_option('bindir'))
