@@ -34,8 +34,7 @@ uuid = { version = "1.0", features = ["v4", "serde"] }
 # Async stream combinators (UDisks2 hotplug watch)
 futures-util = "0.3"
 
-# Process management
-tokio-process = "0.2"
+# Process management (tokio::process from tokio 1 covers spawning)
 async-trait = "0.1"
 
 # Hashing
@@ -76,11 +75,7 @@ clap = { version = "4.5", features = ["derive", "env"] }
 
 [dev-dependencies]
 tempfile = "3.8"
-tokio-test = "0.4"
 pretty_assertions = "1.4"
-
-[build-dependencies]
-vergen = "7.0"
 
 [profile.release]
 lto = "thin"
