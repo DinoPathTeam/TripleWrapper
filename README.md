@@ -11,7 +11,7 @@
 ![Python](https://img.shields.io/badge/python-3.11+-blue)
 ![GTK4](https://img.shields.io/badge/GTK-4.10+-green)
 
-> **Status:** v1.0 stable, not released · v1.1 (full i18n) in progress.
+> **Status:** v1.0.1 stable · v1.1 (full i18n) in progress.
 
 ## Overview
 
@@ -216,7 +216,7 @@ flatpak run --command=triplewrapper-gui io.github.dinopathtream.TripleWrapper
 - [x] **v0.2.1**: Real core integration (JSON protocol, queue wiring)
 - [x] **v0.3**: Local avanzado (archivos cifrados 7z AES, reanudar operaciones grandes, base local de integridad)
 - [x] **v0.4**: Plugin system local (ejecutables `triplewrapper-*`, contrato en `docs/API.md`)
-- [ ] **v1.0**: Stable API, Flathub publication
+- [x] **v1.0**: Stable API, Flathub publication
 - [ ] **v1.1**: Full i18n (gettext, English source + `es.po`, system locale; Spanish UI ships under Flathub's new-submission exception until then)
 
 > **Principio local-only**: sin backends cloud (fuera rclone), sin telemetría externa,
@@ -236,7 +236,7 @@ MIT - See [LICENSE](LICENSE) for details.
 - **BLAKE3** - Fast cryptographic hashing
 
 
-**This work is still in progress. The app is stable. If you have any issue using it, please report it**
+**This work is still in progress. The app is stable. If you have any issue using it, please report it.**
 
 ---
 
