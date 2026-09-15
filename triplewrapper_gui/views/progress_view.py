@@ -9,6 +9,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Gdk, GObject, Gtk
 
 from ..core.models import ProgressTick
+from ..i18n import _
 from ..widgets.steam_graph import SteamGraph
 
 
@@ -33,7 +34,7 @@ class ProgressView(Gtk.Box):
         scrolled.set_child(content)
         self.append(scrolled)
 
-        title = Gtk.Label(label="Operación en curso")
+        title = Gtk.Label(label=_("Operación en curso"))
         title.add_css_class("title-2")
         title.set_halign(Gtk.Align.CENTER)
         content.append(title)
@@ -57,9 +58,9 @@ class ProgressView(Gtk.Box):
         legend = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=18)
         legend.set_halign(Gtk.Align.CENTER)
         for label, color in [
-            ("Lectura", "#3584e4"),
-            ("Escritura", "#ff7800"),
-            ("Compresión", "#2ec27e"),
+            (_("Lectura"), "#3584e4"),
+            (_("Escritura"), "#ff7800"),
+            (_("Compresión"), "#2ec27e"),
         ]:
             row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
             swatch = Gtk.DrawingArea()
@@ -77,16 +78,16 @@ class ProgressView(Gtk.Box):
         # Progress bar
         self._progress_bar = Gtk.ProgressBar()
         self._progress_bar.set_show_text(True)
-        self._progress_bar.set_text("Preparando…")
+        self._progress_bar.set_text(_("Preparando…"))
         content.append(self._progress_bar)
 
         # Stats row
         stats = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=24)
         stats.set_halign(Gtk.Align.CENTER)
 
-        self._read_lbl = self._stat_block("Lectura", "0 MB/s")
-        self._write_lbl = self._stat_block("Escritura", "0 MB/s")
-        self._compress_lbl = self._stat_block("Compresión", "0 MB/s")
+        self._read_lbl = self._stat_block(_("Lectura"), "0 MB/s")
+        self._write_lbl = self._stat_block(_("Escritura"), "0 MB/s")
+        self._compress_lbl = self._stat_block(_("Compresión"), "0 MB/s")
         for lbl in (self._read_lbl, self._write_lbl, self._compress_lbl):
             stats.append(lbl)
 
@@ -96,12 +97,12 @@ class ProgressView(Gtk.Box):
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         actions.set_halign(Gtk.Align.CENTER)
 
-        self._cancel_btn = Gtk.Button(label="Cancelar")
+        self._cancel_btn = Gtk.Button(label=_("Cancelar"))
         self._cancel_btn.add_css_class("destructive-action")
         self._cancel_btn.connect("clicked", lambda *_: self.emit("cancel-requested"))
         actions.append(self._cancel_btn)
 
-        self._done_btn = Gtk.Button(label="Finalizar")
+        self._done_btn = Gtk.Button(label=_("Finalizar"))
         self._done_btn.add_css_class("suggested-action")
         self._done_btn.set_sensitive(False)
         self._done_btn.connect("clicked", lambda *_: self.emit("done"))
@@ -113,7 +114,7 @@ class ProgressView(Gtk.Box):
     def reset(self) -> None:
         self._graph.reset()
         self._progress_bar.set_fraction(0.0)
-        self._progress_bar.set_text("Preparando…")
+        self._progress_bar.set_text(_("Preparando…"))
         self._read_lbl.get_last_child().set_label("0 MB/s")
         self._write_lbl.get_last_child().set_label("0 MB/s")
         self._compress_lbl.get_last_child().set_label("0 MB/s")

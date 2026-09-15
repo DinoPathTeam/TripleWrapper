@@ -144,3 +144,110 @@ msgstr "removable"
 
 msgid "Montar"
 msgstr "Mount"
+
+# --- views/progress_view.py ---
+
+msgid "Operación en curso"
+msgstr "Operation in progress"
+
+msgid "Lectura"
+msgstr "Read"
+
+msgid "Escritura"
+msgstr "Write"
+
+msgid "Compresión"
+msgstr "Compress"
+
+msgid "Preparando…"
+msgstr "Preparing…"
+
+msgid "Cancelar"
+msgstr "Cancel"
+
+msgid "Finalizar"
+msgstr "Finish"
+
+# --- views/browse_view.py ---
+
+msgid "Contenido del archivo"
+msgstr "File contents"
+
+msgid "Eliminar seleccionados"
+msgstr "Delete selected"
+
+msgid "Añadir archivos…"
+msgstr "Add files…"
+
+msgid "Archivo vacío o sin entradas legibles"
+msgstr "Empty file or no readable entries"
+
+msgid "Añadir archivos al archivo"
+msgstr "Add files to the archive"
+
+# --- views/help_view.py ---
+
+msgid "Ayuda y documentación"
+msgstr "Help and documentation"
+
+msgid "Uso básico"
+msgstr "Basic usage"
+
+msgid ""
+"1. Pulsa Abrir archivo o arrastra un comprimido a la ventana.\n"
+"2. Pulsa Analizar para ver espacio y workspace sugerido.\n"
+"3. Elige Iniciar para extraer ahora o Encolar para más tarde.\n"
+"4. Explorar contenido muestra y edita el interior sin salir."
+msgstr ""
+"1. Click Open file or drag an archive into the window.\n"
+"2. Click Analyze to see space and suggested workspace.\n"
+"3. Choose Start to extract now or Enqueue for later.\n"
+"4. Browse contents shows and edits the inside without leaving."
+
+msgid "Permisos"
+msgstr "Permissions"
+
+msgid ""
+"TripleWrapper es local y sandboxed (Flatpak): sin red y sin acceso a tu "
+"home completo.\n"
+"· Selector de archivos: acceso puntual por portales.\n"
+"· Documentos, Descargas y medios extraíbles (/media, /mnt): lectura y "
+"escritura como destinos de trabajo.\n"
+"· UDisks2: montar USBs desde el panel de dispositivos."
+msgstr ""
+"TripleWrapper is local and sandboxed (Flatpak): no network and no access "
+"to your full home.\n"
+"· File picker: one-time access via portals.\n"
+"· Documents, Downloads and removable media (/media, /mnt): read and write "
+"as work destinations.\n"
+"· UDisks2: mount USB drives from the device panel."
+
+msgid "Compatibilidad de formatos"
+msgstr "Format compatibility"
+
+msgid ""
+"Lectura y escritura: 7z, ZIP, TAR y variantes (GZ, XZ, ZST, BZ2), Pixz.\n"
+"Solo lectura: RAR (formato propietario; crear o modificar archivos .rar no "
+"es posible por licencia).\n"
+"Otros formatos: plugins externos triplewrapper-*."
+msgstr ""
+"Read and write: 7z, ZIP, TAR and variants (GZ, XZ, ZST, BZ2), Pixz.\n"
+"Read-only: RAR (proprietary format; creating or modifying .rar files is "
+"not possible by license).\n"
+"Other formats: external triplewrapper-* plugins."
+
+msgid "Si algo falla"
+msgstr "If something fails"
+
+msgid ""
+"· La app muestra el motivo en un aviso: sin espacio, sin permiso o archivo "
+"dañado.\n"
+"· Una operación atascada en cola se cancela o reintenta desde Cola de "
+"operaciones.\n"
+"· Reporta errores con el archivo y el mensaje del aviso."
+msgstr ""
+"· The app shows the reason in a notice: no space, no permission or damaged "
+"file.\n"
+"· An operation stuck in queue is cancelled or retried from Operation "
+"queue.\n"
+"· Report errors with the file and the notice message."

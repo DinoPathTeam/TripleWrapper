@@ -6,7 +6,9 @@ import gi
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 
-from gi.repository import Adw, Gio, GObject, Gtk
+from gi.repository import Adw, GObject, Gtk
+
+from ..i18n import _
 
 
 def human_size(n: int) -> str:
@@ -42,7 +44,7 @@ class BrowseView(Gtk.Box):
         scrolled.set_child(content)
         self.append(scrolled)
 
-        title = Gtk.Label(label="Contenido del archivo")
+        title = Gtk.Label(label=_("Contenido del archivo"))
         title.add_css_class("title-2")
         title.set_halign(Gtk.Align.CENTER)
         content.append(title)
@@ -72,17 +74,17 @@ class BrowseView(Gtk.Box):
         actions = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         actions.set_halign(Gtk.Align.CENTER)
 
-        back_btn = Gtk.Button(label="Atrás")
+        back_btn = Gtk.Button(label=_("Atrás"))
         back_btn.connect("clicked", lambda *_: self.emit("back-requested"))
         actions.append(back_btn)
 
-        self._delete_btn = Gtk.Button(label="Eliminar seleccionados")
+        self._delete_btn = Gtk.Button(label=_("Eliminar seleccionados"))
         self._delete_btn.add_css_class("destructive-action")
         self._delete_btn.add_css_class("pill")
         self._delete_btn.connect("clicked", self._on_delete_clicked)
         actions.append(self._delete_btn)
 
-        add_btn = Gtk.Button(label="Añadir archivos…")
+        add_btn = Gtk.Button(label=_("Añadir archivos…"))
         add_btn.add_css_class("suggested-action")
         add_btn.add_css_class("pill")
         add_btn.connect("clicked", self._on_add_clicked)
@@ -100,7 +102,8 @@ class BrowseView(Gtk.Box):
             child = self._list_box.get_first_child()
 
         if not entries:
-            row = Adw.ActionRow(title="Archivo vacío o sin entradas legibles")
+            row = Adw.ActionRow(
+                title=_("Archivo vacío o sin entradas legibles"))
             row.set_sensitive(False)
             self._list_box.append(row)
             return
@@ -126,22 +129,34 @@ class BrowseView(Gtk.Box):
         self.emit("delete-requested", self.selected_paths())
 
     def _on_add_clicked(self, _btn: Gtk.Button) -> None:
-        dialog = Gtk.FileDialog.new()
-        dialog.set_title("Añadir archivos al archivo")
-        dialog.open_multiple(self.get_root(), None, self._on_add_done)
+        # Same reason as welcome_view: FileDialog wrappers never present
+        # here, so use the classic dialog with multi-select instead.
+        dialog = Gtk.FileChooserDialog(
+            title=_("Añadir archivos al archivo"),
+            action=Gtk.FileChooserAction.OPEN,
+        )
+        dialog.set_select_multiple(True)
+        root = self.get_root()
+        if isinstance(root, Gtk.Window):
+            dialog.set_transient_for(root)
+        dialog.add_button("_Cancelar", Gtk.ResponseType.CANCEL)
+        dialog.add_button("_Añadir", Gtk.ResponseType.ACCEPT)
+        dialog.set_default_response(Gtk.ResponseType.ACCEPT)
+        dialog.connect("response", self._on_add_response)
+        dialog.present()
 
-    def _on_add_done(self, dialog: Gtk.FileDialog, result: Gio.AsyncResult) -> None:
-        from gi.repository import GLib
-
+    def _on_add_response(self, dialog: Gtk.FileChooserDialog, response: int) -> None:
         try:
-            model = dialog.open_multiple_finish(result)
-        except GLib.Error:
-            return  # user cancelled
-        paths = []
-        for i in range(model.get_n_items()):
-            f = model.get_item(i)
-            path = f.get_path() if f else None
-            if path:
-                paths.append(path)
-        if paths:
-            self.emit("add-requested", paths)
+            if response != Gtk.ResponseType.ACCEPT:
+                return
+            model = dialog.get_files()
+            paths = []
+            for i in range(model.get_n_items()):
+                f = model.get_item(i)
+                path = f.get_path() if f else None
+                if path:
+                    paths.append(path)
+            if paths:
+                self.emit("add-requested", paths)
+        finally:
+            dialog.destroy()
