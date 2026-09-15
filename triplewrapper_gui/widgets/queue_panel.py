@@ -11,6 +11,8 @@ from enum import Enum
 
 from gi.repository import Adw, GObject, Gtk
 
+from ..i18n import _
+
 
 class QueueItemStatus(Enum):
     PENDING = "pending"
@@ -74,7 +76,7 @@ class QueuePanelWidget(Adw.Bin):
         # Header
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
         
-        title = Gtk.Label(label="Cola de operaciones")
+        title = Gtk.Label(label=_("Cola de operaciones"))
         title.add_css_class("title-3")
         title.set_halign(Gtk.Align.START)
         header_box.append(title)
@@ -84,18 +86,18 @@ class QueuePanelWidget(Adw.Bin):
         controls_box.set_halign(Gtk.Align.END)
         
         self._pause_queue_btn = Gtk.Button(icon_name="media-playback-pause-symbolic")
-        self._pause_queue_btn.set_tooltip_text("Pausar cola")
+        self._pause_queue_btn.set_tooltip_text(_("Pausar cola"))
         self._pause_queue_btn.connect("clicked", self._on_pause_queue)
         controls_box.append(self._pause_queue_btn)
         
         self._resume_queue_btn = Gtk.Button(icon_name="media-playback-start-symbolic")
-        self._resume_queue_btn.set_tooltip_text("Reanudar cola")
+        self._resume_queue_btn.set_tooltip_text(_("Reanudar cola"))
         self._resume_queue_btn.connect("clicked", self._on_resume_queue)
         self._resume_queue_btn.set_sensitive(False)
         controls_box.append(self._resume_queue_btn)
         
         add_btn = Gtk.Button(icon_name="list-add-symbolic")
-        add_btn.set_tooltip_text("Añadir operación")
+        add_btn.set_tooltip_text(_("Añadir operación"))
         add_btn.connect("clicked", lambda b: self.emit("item-action", "add", "new"))
         controls_box.append(add_btn)
         
@@ -106,15 +108,15 @@ class QueuePanelWidget(Adw.Bin):
         self._status_bar = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
         self._status_bar.add_css_class("linked")
         
-        self._pending_label = Gtk.Label(label="Pendientes: 0")
+        self._pending_label = Gtk.Label(label=_("Pendientes: {n}").format(n=0))
         self._pending_label.add_css_class("caption")
         self._status_bar.append(self._pending_label)
         
-        self._running_label = Gtk.Label(label="En ejecución: 0")
+        self._running_label = Gtk.Label(label=_("En ejecución: {n}").format(n=0))
         self._running_label.add_css_class("caption")
         self._status_bar.append(self._running_label)
         
-        self._paused_label = Gtk.Label(label="Pausados: 0")
+        self._paused_label = Gtk.Label(label=_("Pausados: {n}").format(n=0))
         self._paused_label.add_css_class("caption")
         self._status_bar.append(self._paused_label)
         
@@ -139,23 +141,23 @@ class QueuePanelWidget(Adw.Bin):
         self._item_actions_box.set_margin_top(6)
         main_box.append(self._item_actions_box)
         
-        self._pause_item_btn = Gtk.Button(label="Pausar")
+        self._pause_item_btn = Gtk.Button(label=_("Pausar"))
         self._pause_item_btn.add_css_class("pill")
         self._pause_item_btn.connect("clicked", self._on_pause_item)
         self._item_actions_box.append(self._pause_item_btn)
         
-        self._resume_item_btn = Gtk.Button(label="Reanudar")
+        self._resume_item_btn = Gtk.Button(label=_("Reanudar"))
         self._resume_item_btn.add_css_class("pill")
         self._resume_item_btn.add_css_class("suggested-action")
         self._resume_item_btn.connect("clicked", self._on_resume_item)
         self._item_actions_box.append(self._resume_item_btn)
         
-        self._retry_btn = Gtk.Button(label="Reintentar")
+        self._retry_btn = Gtk.Button(label=_("Reintentar"))
         self._retry_btn.add_css_class("pill")
         self._retry_btn.connect("clicked", self._on_retry_item)
         self._item_actions_box.append(self._retry_btn)
         
-        self._cancel_btn = Gtk.Button(label="Cancelar")
+        self._cancel_btn = Gtk.Button(label=_("Cancelar"))
         self._cancel_btn.add_css_class("pill")
         self._cancel_btn.add_css_class("destructive-action")
         self._cancel_btn.connect("clicked", self._on_cancel_item)
@@ -225,13 +227,16 @@ class QueuePanelWidget(Adw.Bin):
         row.set_title(title)
         
         # Subtitle: status + priority + progress
-        status_text = f"Estado: {item.status.value} | Prioridad: {item.priority.name}"
+        status_text = (
+            _("Estado: {status} | Prioridad: {priority}").format(
+                status=item.status.value, priority=item.priority.name)
+        )
         if item.status == QueueItemStatus.RUNNING:
-            status_text += f" | Progreso: {item.progress:.0f}%"
+            status_text += _(" | Progreso: {progress:.0f}%").format(progress=item.progress)
             if item.current_file:
                 status_text += f" ({item.current_file})"
         elif item.error_message:
-            status_text += f" | Error: {item.error_message[:50]}"
+            status_text += _(" | Error: {error}").format(error=item.error_message[:50])
         
         row.set_subtitle(status_text)
         
@@ -280,9 +285,9 @@ class QueuePanelWidget(Adw.Bin):
         running = sum(1 for i in self._items if i.status == QueueItemStatus.RUNNING)
         paused = sum(1 for i in self._items if i.status == QueueItemStatus.PAUSED)
         
-        self._pending_label.set_text(f"Pendientes: {pending}")
-        self._running_label.set_text(f"En ejecución: {running}")
-        self._paused_label.set_text(f"Pausados: {paused}")
+        self._pending_label.set_text(_("Pendientes: {n}").format(n=pending))
+        self._running_label.set_text(_("En ejecución: {n}").format(n=running))
+        self._paused_label.set_text(_("Pausados: {n}").format(n=paused))
     
     # Event handlers
     def _on_pause_queue(self, button: Gtk.Button):

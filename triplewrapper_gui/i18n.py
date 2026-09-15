@@ -24,3 +24,8 @@ _translation = gettext.translation(_DOMAIN, localedir=str(_LOCALEDIR), fallback=
 def _(message: str) -> str:
     """Translate a Spanish source string to the active locale."""
     return _translation.gettext(message)
+
+
+def n(singular: str, plural: str, count: int) -> str:
+    """Translate with plural forms (Spanish source, English catalog)."""
+    return _translation.ngettext(singular, plural, count)

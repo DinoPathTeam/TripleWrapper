@@ -9,6 +9,7 @@ gi.require_version("Adw", "1")
 from gi.repository import Adw, Gio, Gtk
 
 from .core.bridge import CoreBridge
+from .i18n import _, n
 from .views.analysis_view import AnalysisView
 from .views.browse_view import BrowseView
 from .views.help_view import HelpView
@@ -46,17 +47,17 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         # Style menu
         style_menu = Gio.Menu()
         style_section = Gio.Menu()
-        style_section.append("Claro", "app.style-light")
-        style_section.append("Oscuro", "app.style-dark")
-        style_section.append("Sistema", "app.style-default")
-        style_menu.append_section("Apariencia", style_section)
+        style_section.append(_("Claro"), "app.style-light")
+        style_section.append(_("Oscuro"), "app.style-dark")
+        style_section.append(_("Sistema"), "app.style-default")
+        style_menu.append_section(_("Apariencia"), style_section)
         help_section = Gio.Menu()
-        help_section.append("Ayuda y documentación", "app.show-help")
+        help_section.append(_("Ayuda y documentación"), "app.show-help")
         style_menu.append_section(None, help_section)
 
         menu_btn = Gtk.MenuButton(menu_model=style_menu)
         menu_btn.set_icon_name("open-menu-symbolic")
-        menu_btn.set_tooltip_text("Preferencias")
+        menu_btn.set_tooltip_text(_("Preferencias"))
         self._header.pack_end(menu_btn)
 
         self.main_box.append(self._header)
@@ -228,14 +229,14 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
             return None
         dialog = Adw.MessageDialog(
             transient_for=self,
-            heading="Archivo cifrado",
-            body="Este archivo requiere contraseña (AES). No se guarda en ningún sitio.",
+            heading=_("Archivo cifrado"),
+            body=_("Este archivo requiere contraseña (AES). No se guarda en ningún sitio."),
         )
         entry = Gtk.PasswordEntry(show_peek_icon=True)
-        entry.set_placeholder_text("Contraseña del archivo")
+        entry.set_placeholder_text(_("Contraseña del archivo"))
         dialog.set_extra_child(entry)
-        dialog.add_response("cancel", "Cancelar")
-        dialog.add_response("ok", "Continuar")
+        dialog.add_response("cancel", _("Cancelar"))
+        dialog.add_response("ok", _("Continuar"))
         dialog.set_response_appearance("ok", Adw.ResponseAppearance.SUGGESTED)
         dialog.set_default_response("ok")
         dialog.set_close_response("cancel")
@@ -260,7 +261,7 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         archive = self._bridge._archive_path
         workspace = self._analysis.get_selected_workspace()
         if not archive:
-            self.show_toast("No hay archivo para encolar", priority=Adw.ToastPriority.HIGH)
+            self.show_toast(_("No hay archivo para encolar"), priority=Adw.ToastPriority.HIGH)
             return
         password = self.ensure_password()
         if password is None and self._is_encrypted():
@@ -275,16 +276,16 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
         try:
             op_id = self._bridge.queue_add(archive, "extract", "normal", workspace, password)
             GLib.idle_add(
-                self.show_toast, f"Encolado con ID {op_id}",
+                self.show_toast, _("Encolado con ID {id}").format(id=op_id),
             )
             GLib.idle_add(self.refresh_queue)
         except Exception as exc:  # noqa: BLE001
-            GLib.idle_add(self.show_toast, f"No se pudo encolar: {exc}", Adw.ToastPriority.HIGH)
+            GLib.idle_add(self.show_toast, _("No se pudo encolar: {error}").format(error=exc), Adw.ToastPriority.HIGH)
 
     def on_browse_requested(self, view) -> None:
         archive = self._bridge._archive_path
         if not archive:
-            self.show_toast("No hay archivo para explorar", priority=Adw.ToastPriority.HIGH)
+            self.show_toast(_("No hay archivo para explorar"), priority=Adw.ToastPriority.HIGH)
             return
         self.go_browse()
         self.refresh_browse()
@@ -305,7 +306,7 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
             GLib.idle_add(self._browse.set_entries, entries)
         except Exception as exc:  # noqa: BLE001
             GLib.idle_add(
-                self.show_toast, f"No se pudo listar: {exc}", Adw.ToastPriority.HIGH,
+                self.show_toast, _("No se pudo listar: {error}").format(error=exc), Adw.ToastPriority.HIGH,
             )
 
     def _browse_password(self) -> str | None:
@@ -317,15 +318,19 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
     def on_browse_delete(self, view, paths: object) -> None:
         selected = list(paths) if isinstance(paths, list) else []
         if not selected:
-            self.show_toast("Selecciona al menos un archivo")
+            self.show_toast(_("Selecciona al menos un archivo"))
             return
         dialog = Adw.MessageDialog(
             transient_for=self,
-            heading=f"¿Eliminar {len(selected)} archivo(s)?",
-            body="Se reescribirá el archivo de forma segura.",
+            heading=n(
+                "¿Eliminar {n} archivo?",
+                "¿Eliminar {n} archivos?",
+                len(selected),
+            ).format(n=len(selected)),
+            body=_("Se reescribirá el archivo de forma segura."),
         )
-        dialog.add_response("cancel", "Cancelar")
-        dialog.add_response("ok", "Eliminar")
+        dialog.add_response("cancel", _("Cancelar"))
+        dialog.add_response("ok", _("Eliminar"))
         dialog.set_response_appearance("ok", Adw.ResponseAppearance.DESTRUCTIVE)
         dialog.set_default_response("cancel")
         dialog.set_close_response("cancel")
@@ -350,11 +355,18 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
 
         try:
             self._bridge.delete_files(archive, [str(p) for p in selected], password)
-            GLib.idle_add(self.show_toast, f"Eliminados {len(selected)} archivo(s)")
+            GLib.idle_add(
+                self.show_toast,
+                n(
+                    "Eliminado {n} archivo",
+                    "Eliminados {n} archivos",
+                    len(selected),
+                ).format(n=len(selected)),
+            )
             GLib.idle_add(self.refresh_browse)
             GLib.idle_add(self.refresh_integrity_label)
         except Exception as exc:  # noqa: BLE001
-            GLib.idle_add(self.show_toast, f"No se pudo eliminar: {exc}", Adw.ToastPriority.HIGH)
+            GLib.idle_add(self.show_toast, _("No se pudo eliminar: {error}").format(error=exc), Adw.ToastPriority.HIGH)
 
     def on_browse_add(self, view, paths: object) -> None:
         import threading
@@ -375,11 +387,11 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
 
         try:
             self._bridge.create_archive(archive, [str(f) for f in files], 5, password)
-            GLib.idle_add(self.show_toast, f"Añadidos {len(files)} archivo(s)")
+            GLib.idle_add(self.show_toast, n("Añadido {n} archivo", "Añadidos {n} archivos", len(files)).format(n=len(files)))
             GLib.idle_add(self.refresh_browse)
             GLib.idle_add(self.refresh_integrity_label)
         except Exception as exc:  # noqa: BLE001
-            GLib.idle_add(self.show_toast, f"No se pudo añadir: {exc}", Adw.ToastPriority.HIGH)
+            GLib.idle_add(self.show_toast, _("No se pudo añadir: {error}").format(error=exc), Adw.ToastPriority.HIGH)
 
     def on_queue_action(self, view, action: str, item_id: str) -> None:
         if action == "add":
@@ -409,7 +421,7 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
             GLib.idle_add(self.refresh_queue)
         except Exception as exc:  # noqa: BLE001
             GLib.idle_add(
-                self.show_toast, f"No se pudo {operation}: {exc}", Adw.ToastPriority.HIGH,
+                self.show_toast, _("No se pudo completar la acción: {error}").format(error=exc), Adw.ToastPriority.HIGH,
             )
 
     def refresh_queue(self) -> None:
@@ -477,18 +489,18 @@ class TripleWrapperWindow(Adw.ApplicationWindow):
 
         try:
             mount_point = self._bridge.device_mount(dev_path)
-            GLib.idle_add(self.show_toast, f"Montado en {mount_point} — ya puedes usarlo")
+            GLib.idle_add(self.show_toast, _("Montado en {point} — ya puedes usarlo").format(point=mount_point))
             GLib.idle_add(self.refresh_devices)
         except Exception as exc:  # noqa: BLE001
             GLib.idle_add(
-                self.show_toast, f"No se pudo montar: {exc}", Adw.ToastPriority.HIGH,
+                self.show_toast, _("No se pudo montar: {error}").format(error=exc), Adw.ToastPriority.HIGH,
             )
 
     def on_devices_changed(self, bridge, kind: str) -> None:
         if kind == "device-added":
-            self.show_toast("Dispositivo conectado — revisa la lista para montarlo")
+            self.show_toast(_("Dispositivo conectado — revisa la lista para montarlo"))
         else:
-            self.show_toast("Dispositivo desconectado")
+            self.show_toast(_("Dispositivo desconectado"))
         self.refresh_devices()
 
     def refresh_devices(self) -> None:

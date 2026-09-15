@@ -239,6 +239,133 @@ msgstr ""
 msgid "Si algo falla"
 msgstr "If something fails"
 
+# --- main_window.py (menus, dialogs, toasts) ---
+
+msgid "Claro"
+msgstr "Light"
+
+msgid "Oscuro"
+msgstr "Dark"
+
+msgid "Sistema"
+msgstr "System"
+
+msgid "Apariencia"
+msgstr "Appearance"
+
+msgid "Preferencias"
+msgstr "Preferences"
+
+msgid "Archivo cifrado"
+msgstr "Encrypted file"
+
+msgid "Este archivo requiere contraseña (AES). No se guarda en ningún sitio."
+msgstr "This file requires a password (AES). It is not stored anywhere."
+
+msgid "Contraseña del archivo"
+msgstr "File password"
+
+msgid "Continuar"
+msgstr "Continue"
+
+msgid "No hay archivo para encolar"
+msgstr "No file to enqueue"
+
+msgid "Encolado con ID {id}"
+msgstr "Enqueued with ID {id}"
+
+msgid "No se pudo encolar: {error}"
+msgstr "Could not enqueue: {error}"
+
+msgid "No hay archivo para explorar"
+msgstr "No file to browse"
+
+msgid "No se pudo listar: {error}"
+msgstr "Could not list: {error}"
+
+msgid "Selecciona al menos un archivo"
+msgstr "Select at least one file"
+
+msgid "¿Eliminar {n} archivo?"
+msgid_plural "¿Eliminar {n} archivos?"
+msgstr[0] "Delete {n} file?"
+msgstr[1] "Delete {n} files?"
+
+msgid "Se reescribirá el archivo de forma segura."
+msgstr "The file will be safely rewritten."
+
+msgid "Eliminar"
+msgstr "Delete"
+
+msgid "Eliminado {n} archivo"
+msgid_plural "Eliminados {n} archivos"
+msgstr[0] "Deleted {n} file"
+msgstr[1] "Deleted {n} files"
+
+msgid "No se pudo eliminar: {error}"
+msgstr "Could not delete: {error}"
+
+msgid "Añadido {n} archivo"
+msgid_plural "Añadidos {n} archivos"
+msgstr[0] "Added {n} file"
+msgstr[1] "Added {n} files"
+
+msgid "No se pudo añadir: {error}"
+msgstr "Could not add: {error}"
+
+msgid "No se pudo completar la acción: {error}"
+msgstr "Could not complete the action: {error}"
+
+msgid "Montado en {point} — ya puedes usarlo"
+msgstr "Mounted at {point} — ready to use"
+
+msgid "No se pudo montar: {error}"
+msgstr "Could not mount: {error}"
+
+msgid "Dispositivo conectado — revisa la lista para montarlo"
+msgstr "Device connected — check the list to mount it"
+
+msgid "Dispositivo desconectado"
+msgstr "Device disconnected"
+
+# --- widgets/queue_panel.py ---
+
+msgid "Pausar cola"
+msgstr "Pause queue"
+
+msgid "Reanudar cola"
+msgstr "Resume queue"
+
+msgid "Añadir operación"
+msgstr "Add operation"
+
+msgid "Pausar"
+msgstr "Pause"
+
+msgid "Reanudar"
+msgstr "Resume"
+
+msgid "Reintentar"
+msgstr "Retry"
+
+msgid "Estado: {status} | Prioridad: {priority}"
+msgstr "Status: {status} | Priority: {priority}"
+
+msgid " | Progreso: {progress:.0f}%"
+msgstr " | Progress: {progress:.0f}%"
+
+msgid " | Error: {error}"
+msgstr " | Error: {error}"
+
+msgid "Pendientes: {n}"
+msgstr "Pending: {n}"
+
+msgid "En ejecución: {n}"
+msgstr "Running: {n}"
+
+msgid "Pausados: {n}"
+msgstr "Paused: {n}"
+
 msgid ""
 "· La app muestra el motivo en un aviso: sin espacio, sin permiso o archivo "
 "dañado.\n"
