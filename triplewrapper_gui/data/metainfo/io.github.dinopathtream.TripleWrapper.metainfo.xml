@@ -44,6 +44,12 @@
     </screenshot>
   </screenshots>
   <releases>
+    <release version="1.0.2" date="2026-09-15">
+      <description><p>Self-consistent release builds and documentation</p></description>
+    </release>
+    <release version="1.0.1" date="2026-09-15">
+      <description><p>File picker fix, live operation telemetry and dependency cleanup</p></description>
+    </release>
     <release version="1.0.0" date="2026-09-14">
       <description><p>First stable release: local-only archive manager with smart storage decisions, real-time telemetry, AES support and Flatpak distribution</p></description>
     </release>

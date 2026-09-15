@@ -151,6 +151,13 @@ jobs:
         run: |
           flatpak install --user -y flathub org.gnome.Platform//50 org.gnome.Sdk//50
 
+      - name: Pin manifest to built tag on releases
+        if: startsWith(github.ref, 'refs/tags/v')
+        run: |
+          TAG="${GITHUB_REF#refs/tags/}"
+          sed -i "s/\"tag\": \"v[^\"]*\"/\"tag\": \"$TAG\"/" flatpak/io.github.dinopathtream.TripleWrapper.json
+          grep -m2 '"tag"' flatpak/io.github.dinopathtream.TripleWrapper.json
+
       - name: Build and install Flatpak
         run: |
           flatpak-builder --force-clean --user --install --install-deps-from=flathub \
