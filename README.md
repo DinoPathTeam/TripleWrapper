@@ -92,6 +92,8 @@ cd ../gui && pip install -e .
 ```bash
 yay -S triplewrapper-git
 ```
+> This option is unavailable until further notice. When is available, this notification will be deleted.
+
 
 ## Usage
 
@@ -236,8 +238,13 @@ MIT - See [LICENSE](LICENSE) for details.
 - **BLAKE3** - Fast cryptographic hashing
 
 
-**This work is still in progress. The app is stable. If you have any issue using it, please report it.**
+---
+
+**If you're having any issues from the app, please report it through the appropriate channels and we will acknowledge receipt within 5 business days.**
 
 ---
 
+
 *Built with ❤️ for the Linux gaming and archiving community*
+
+---
