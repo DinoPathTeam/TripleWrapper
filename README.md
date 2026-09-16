@@ -11,7 +11,7 @@
 ![Python](https://img.shields.io/badge/python-3.11+-blue)
 ![GTK4](https://img.shields.io/badge/GTK-4.10+-green)
 
-> **Status:** v1.0.1 stable · v1.1 (full i18n) in progress.
+> **Status:** Stable.
 
 ## Overview
 
@@ -99,10 +99,10 @@ yay -S triplewrapper-git
 
 ### GUI
 Launch `triplewrapper-gui` and:
-1. Click **"Abrir archivo"** to select an archive
-2. Click **"Analizar"** to check storage requirements
+1. Click **"Open file"** to select an archive
+2. Click **"Analyze"** to check storage requirements
 3. If external drive needed, confirm the suggested workspace
-4. Click **"Iniciar"** to begin operation
+4. Click **"Start"** to begin operation
 5. Watch the **Steam-style graph** for real-time speeds
 
 ### CLI (Core)
@@ -219,7 +219,7 @@ flatpak run --command=triplewrapper-gui io.github.dinopathtream.TripleWrapper
 - [x] **v0.3**: Local avanzado (archivos cifrados 7z AES, reanudar operaciones grandes, base local de integridad)
 - [x] **v0.4**: Plugin system local (ejecutables `triplewrapper-*`, contrato en `docs/API.md`)
 - [x] **v1.0**: Stable API, Flathub publication
-- [ ] **v1.1**: Full i18n (gettext, English source + `es.po`, system locale; Spanish UI ships under Flathub's new-submission exception until then)
+- [X] **v1.1**: Full i18n (gettext, English source + `es.po`, system locale; Spanish UI ships under Flathub's new-submission exception until then)
 
 > **Local-only principle**: no cloud backends (except rclone), no external telemetry,
 > no network dependencies for operation. Network mounts (`/mnt`, NFS/SMB) are treated
