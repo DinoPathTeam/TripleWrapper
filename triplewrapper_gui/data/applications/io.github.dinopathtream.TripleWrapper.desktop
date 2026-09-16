@@ -8,5 +8,6 @@ Icon=io.github.dinopathtream.TripleWrapper
 Terminal=false
 Categories=Utility;Archiving;GTK;
 StartupNotify=true
+StartupWMClass=io.github.dinopathtream.TripleWrapper
 Keywords=archive;compress;extract;7zip;zip;tar;
 MimeType=application/x-7z-compressed;application/zip;application/x-rar;application/x-tar;application/gzip;application/x-xz;application/x-bzip2;application/x-zstd;
