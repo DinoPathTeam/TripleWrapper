@@ -1,0 +1,32 @@
+# Maintainer: DinoPathTeam <adrexcou@users.noreply.github.com>
+pkgname=triplewrapper
+pkgver=1.1.1
+pkgrel=1
+pkgdesc="Local-only archive manager with smart storage decisions (Rust core + GTK4 UI)"
+arch=('x86_64')
+url="https://github.com/DinoPathTeam/TripleWrapper"
+license=('MIT')
+depends=('gtk4' 'libadwaita' 'python-gobject' 'python-cairo' '7zip' 'pixz' 'udisks2' 'hicolor-icon-theme' 'glib2')
+makedepends=('cargo' 'rust' 'meson' 'git')
+checkdepends=('python-pytest')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/DinoPathTeam/TripleWrapper/archive/refs/tags/v$pkgver.tar.gz")
+sha256sums=('5edcd3ad591b520292ff8d28fe29cc0ab6a35c1305fd69f05c41686237e78798')
+
+build() {
+  cd "$pkgname-$pkgver"
+  cargo build --release --frozen --manifest-path src/core/Cargo.toml
+  meson setup --prefix=/usr builddir
+}
+
+check() {
+  cd "$pkgname-$pkgver"
+  cargo test --frozen --manifest-path src/core/Cargo.toml
+  python -m pytest tests/unit
+}
+
+package() {
+  cd "$pkgname-$pkgver"
+  install -Dm755 src/core/target/release/triplewrapper-core "$pkgdir/usr/bin/triplewrapper-core"
+  DESTDIR="$pkgdir" meson install -C builddir
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

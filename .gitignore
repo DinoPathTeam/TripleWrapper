@@ -72,3 +72,9 @@ coverage/
 *.AppImage
 # Local flathub fork workspace (never commit)
 flathub/
+
+# makepkg artifacts (sources, packages, build dirs)
+packaging/arch/*.tar.gz
+packaging/arch/*.pkg.tar.*
+packaging/arch/pkg/
+packaging/arch/src/

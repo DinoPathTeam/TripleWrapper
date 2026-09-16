@@ -1,0 +1,25 @@
+pkgbase = triplewrapper
+	pkgdesc = Local-only archive manager with smart storage decisions (Rust core + GTK4 UI)
+	pkgver = 1.1.1
+	pkgrel = 1
+	url = https://github.com/DinoPathTeam/TripleWrapper
+	arch = x86_64
+	license = MIT
+	checkdepends = python-pytest
+	makedepends = cargo
+	makedepends = rust
+	makedepends = meson
+	makedepends = git
+	depends = gtk4
+	depends = libadwaita
+	depends = python-gobject
+	depends = python-cairo
+	depends = 7zip
+	depends = pixz
+	depends = udisks2
+	depends = hicolor-icon-theme
+	depends = glib2
+	source = triplewrapper-1.1.1.tar.gz::https://github.com/DinoPathTeam/TripleWrapper/archive/refs/tags/v1.1.1.tar.gz
+	sha256sums = 5edcd3ad591b520292ff8d28fe29cc0ab6a35c1305fd69f05c41686237e78798
+
+pkgname = triplewrapper
