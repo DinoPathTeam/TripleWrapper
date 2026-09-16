@@ -78,3 +78,8 @@ packaging/arch/*.tar.gz
 packaging/arch/*.pkg.tar.*
 packaging/arch/pkg/
 packaging/arch/src/
+
+# Editor swap/temp files
+*.swp
+*.kate-swp
+*~

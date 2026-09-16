@@ -1,0 +1,55 @@
+name: Bug report
+description: Something is not working as expected
+labels: ["bug"]
+body:
+  - type: input
+    id: version
+    attributes:
+      label: App version
+      placeholder: "1.1.2"
+    validations:
+      required: true
+  - type: dropdown
+    id: install
+    attributes:
+      label: Installation method
+      options:
+        - Flatpak bundle (GitHub Release)
+        - Flathub
+        - AUR (triplewrapper)
+        - Native build
+    validations:
+      required: true
+  - type: input
+    id: env
+    attributes:
+      label: Distro and desktop
+      placeholder: "Arch Linux, KDE Plasma (Wayland)"
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      placeholder: "1. Open this archive type… 2. Click… 3. …"
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs
+      description: Run from terminal when possible
+      placeholder: "flatpak run io.github.dinopathtream.TripleWrapper 2>&1"
+      render: shell
